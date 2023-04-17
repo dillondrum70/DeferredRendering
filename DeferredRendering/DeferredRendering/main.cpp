@@ -76,15 +76,15 @@ glm::vec3 bgColor = glm::vec3(0);
 
 float lightScale = .5f;
 
-const int MAX_POINT_LIGHTS = 8;
+const int MAX_POINT_LIGHTS = 250;
 PointLight pointLights[MAX_POINT_LIGHTS];
-int pointLightCount = 0;
+int pointLightCount = 10;
 float pointLightRadius = 5.f;
 float pointLightHeight = 2.f;
 
 const int MAX_DIRECTIONAL_LIGHTS = 8;
 DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
-int directionalLightCount = 1;
+int directionalLightCount = 0;
 float directionalLightAngle = 180.f;	//Angle towards center, 0 is down, + is towards the center, - is away from the center
 
 const int MAX_SPOTLIGHTS = 8;
@@ -98,7 +98,7 @@ float constantAttenuation = 1.f;
 float linearAttenuation = .35f;
 float quadraticAttenuation = .44f;
 
-bool manuallyMoveLights = true;	//If true, allows you to move point lights manually
+bool manuallyMoveLights = false;	//If true, allows you to move point lights manually
 
 bool phong = true;
 
@@ -138,6 +138,8 @@ float maxBias = .015f;
 bool enablePCF = true;
 bool enableSecondDepth = false;
 int pcfSamples = 1;
+
+glm::vec4 borderCol = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 
 int main() {
 	if (!glfwInit()) {
@@ -239,15 +241,15 @@ int main() {
 			gBufferShader.setInt("_Textures[" + std::to_string(i) + "].normSampler", texManager.textures[i].GetNormalMap()->texNumber);
 		}
 
-		/*bool hasSpecular = texManager.textures[i].GetSpecularMap() != nullptr;
+		bool hasSpecular = texManager.textures[i].GetSpecularMap() != nullptr;
 		litShader.setInt("_Textures[" + std::to_string(i) + "].hasSpecular", hasSpecular);
 		gBufferShader.setInt("_Textures[" + std::to_string(i) + "].hasSpecular", hasSpecular);
 
 		if (hasSpecular)
 		{
-			litShader.setInt("_Textures[" + std::to_string(i) + "].normSampler", texManager.textures[i].GetSpecularMap()->texNumber);
-			gBufferShader.setInt("_Textures[" + std::to_string(i) + "].normSampler", texManager.textures[i].GetSpecularMap()->texNumber);
-		}*/
+			litShader.setInt("_Textures[" + std::to_string(i) + "].specSampler", texManager.textures[i].GetSpecularMap()->texNumber);
+			gBufferShader.setInt("_Textures[" + std::to_string(i) + "].specSampler", texManager.textures[i].GetSpecularMap()->texNumber);
+		}
 	}
 
 	//Initialize shape transforms
@@ -349,24 +351,40 @@ int main() {
 	fbo.AddEffect(&bloomEffect);
 
 	Texture positionBuffer;
-	positionBuffer.CreateTexture(GL_RGBA, SCREEN_WIDTH, SCREEN_HEIGHT, GL_RGBA, GL_FLOAT);
+	positionBuffer.CreateTexture(GL_RGBA16F, SCREEN_WIDTH, SCREEN_HEIGHT, GL_RGBA, GL_FLOAT);
 	Texture normalBuffer;
-	normalBuffer.CreateTexture(GL_RGBA, SCREEN_WIDTH, SCREEN_HEIGHT, GL_RGBA, GL_FLOAT);
+	normalBuffer.CreateTexture(GL_RGBA16F, SCREEN_WIDTH, SCREEN_HEIGHT, GL_RGBA, GL_FLOAT);
 	Texture albedoSpecularBuffer;
-	albedoSpecularBuffer.CreateTexture(GL_RGBA, SCREEN_WIDTH, SCREEN_HEIGHT, GL_RGBA, GL_FLOAT);
+	albedoSpecularBuffer.CreateTexture(GL_RGBA, SCREEN_WIDTH, SCREEN_HEIGHT, GL_RGBA, GL_UNSIGNED_BYTE);
+	RenderBuffer gDepthBuffer;
+	gDepthBuffer.Create(SCREEN_WIDTH, SCREEN_HEIGHT);
 
 	FramebufferObject gBuffer;
+	gBuffer.Create();
 	gBuffer.AddColorAttachment(positionBuffer, GL_COLOR_ATTACHMENT0);
 	gBuffer.AddColorAttachment(normalBuffer, GL_COLOR_ATTACHMENT1);
 	gBuffer.AddColorAttachment(albedoSpecularBuffer, GL_COLOR_ATTACHMENT2);
+	gBuffer.AddDepthAttachment(gDepthBuffer);
 	
 	while (!glfwWindowShouldClose(window)) {
 		processInput(window);
 
 		//Check framebuffer object is complete
+		if (!gBuffer.IsComplete())
+		{
+			printf("GBuffer Framebuffer Object is incomplete\n\0");
+		}
+
+		//Check framebuffer object is complete
+		if (!shadowFbo.IsComplete())
+		{
+			printf("Shadow Framebuffer Object is incomplete\n\0");
+		}
+
+		//Check framebuffer object is complete
 		if (!fbo.IsComplete())
 		{
-			printf("Framebuffer Object is incomplete\n\0");
+			printf("Postprocessing Framebuffer Object is incomplete\n\0");
 		}
 
 		ImGui_ImplOpenGL3_NewFrame();
@@ -394,6 +412,22 @@ int main() {
 		glm::mat4 lightProjection = glm::ortho(-shadowFrustumExtents.x, shadowFrustumExtents.x, -shadowFrustumExtents.y, shadowFrustumExtents.y, shadowDeathNearPlane, shadowFrustumExtents.z * 2.f);
 		//drawScene(&depthShader, lightView, lightProjection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
 
+		//Bind the G Buffer
+		gBuffer.Bind();
+		gBuffer.Clear(bgColor);
+		GLenum gBuffers[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
+		glDrawBuffers(3, gBuffers);
+
+		glm::mat4 view = camera.getViewMatrix();
+		glm::mat4 projection = camera.getProjectionMatrix();
+
+		gBufferShader.use();
+
+		texManager.BindTextures();	//This way outside of this step, all the texture slots can be used
+
+		drawScene(&gBufferShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
+
+
 		//Bind and clear main frame buffer
 		fbo.Bind();
 		fbo.Clear(bgColor);
@@ -404,9 +438,6 @@ int main() {
 		{
 			glCullFace(GL_BACK);
 		}
-
-		glm::mat4 view = camera.getViewMatrix();
-		glm::mat4 projection = camera.getProjectionMatrix();
 
 		//Setup shadows in lit
 		litShader.use();
@@ -420,15 +451,13 @@ int main() {
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
 		//Set border color to white to not change color
-		glm::vec4 borderCol = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 		glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, &borderCol.x);
 		litShader.setInt("_ShadowMap", shadowDepthBuffer.GetTexture());
 		litShader.setMat4("_LightViewProj", lightProjection * lightView);
 		drawScene(&litShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
 
 		//Draw wireframe cube of shadow frustum
-		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-		glDisable(GL_CULL_FACE);
+		
 		unlitShader.use();
 
 		/*glm::vec3 forward = -glm::normalize(directionalLights[0].dir);
@@ -444,6 +473,9 @@ int main() {
 
 		//Draw light as a small sphere using unlit shader, ironically.
 		drawLights(&unlitShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
+
+		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+		glDisable(GL_CULL_FACE);
 
 		glm::mat4 frustPos = glm::translate(glm::mat4(1), shadowFrustumOrigin);
 		glm::mat4 frustRot = glm::toMat4(glm::quatLookAt(glm::normalize(directionalLights[0].dir), glm::vec3(0, 1, 0)));
@@ -496,7 +528,7 @@ int main() {
 		ImGui::Begin("Settings");
 
 		ImGui::Checkbox("Phong Lighting", &phong);
-		//ImGui::Checkbox("Manually Move Lights", &manuallyMoveLights);
+		ImGui::Checkbox("Manually Move Lights", &manuallyMoveLights);
 		ImGui::Text("Opens option under settings\nin different types of lights\nto change the individual\nposition and/or direction of\nthe lights");
 
 		ImGui::Text("GL Falloff Attenuation");
@@ -537,27 +569,27 @@ int main() {
 		ImGui::End();
 
 		//Point Lights
-		//ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);	//Size to fit content
-		//ImGui::Begin("Point Lights");
+		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);	//Size to fit content
+		ImGui::Begin("Point Lights");
 
-		//ImGui::SliderInt("Light Count", &pointLightCount, 0, MAX_POINT_LIGHTS);
+		ImGui::SliderInt("Light Count", &pointLightCount, 0, MAX_POINT_LIGHTS);
 
-		//if (!manuallyMoveLights)
-		//{
-		//	ImGui::SliderFloat("Light Array Radius", &pointLightRadius, 0.f, 100.f);
-		//	ImGui::SliderFloat("Light Array Height", &pointLightHeight, -5.f, 30.f);
-		//}
+		if (!manuallyMoveLights)
+		{
+			ImGui::SliderFloat("Light Array Radius", &pointLightRadius, 0.f, 100.f);
+			ImGui::SliderFloat("Light Array Height", &pointLightHeight, -5.f, 30.f);
+		}
 
-		//for (size_t i = 0; i < pointLightCount; i++)
-		//{
-		//	ImGui::Text(("Point Light" + std::to_string(i)).c_str());
+		for (size_t i = 0; i < pointLightCount; i++)
+		{
+			ImGui::Text(("Point Light" + std::to_string(i)).c_str());
 
-		//	ImGui::PushID(i);
-		//	pointLights[i].ExposeImGui(manuallyMoveLights);
-		//	ImGui::PopID();
-		//}
+			ImGui::PushID(i);
+			pointLights[i].ExposeImGui(manuallyMoveLights);
+			ImGui::PopID();
+		}
 
-		//ImGui::End();
+		ImGui::End();
 
 		//Directional Light
 		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);	//Size to fit content
@@ -582,28 +614,28 @@ int main() {
 		ImGui::End();
 
 		//Spotlight
-		//ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);	//Size to fit content
-		//ImGui::Begin("Spotlight");
+		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);	//Size to fit content
+		ImGui::Begin("Spotlight");
 
-		//ImGui::SliderInt("Light Count", &spotlightCount, 0, MAX_SPOTLIGHTS);
+		ImGui::SliderInt("Light Count", &spotlightCount, 0, MAX_SPOTLIGHTS);
 
-		//if (!manuallyMoveLights)
-		//{
-		//	ImGui::SliderFloat("Light Array Radius", &spotlightRadius, 0.f, 100.f);
-		//	ImGui::SliderFloat("Light Array Height", &spotlightHeight, -5.f, 30.f);
-		//	ImGui::SliderFloat("Light Array Angle", &spotlightAngle, -60.f, 60.f);
-		//}
+		if (!manuallyMoveLights)
+		{
+			ImGui::SliderFloat("Light Array Radius", &spotlightRadius, 0.f, 100.f);
+			ImGui::SliderFloat("Light Array Height", &spotlightHeight, -5.f, 30.f);
+			ImGui::SliderFloat("Light Array Angle", &spotlightAngle, -60.f, 60.f);
+		}
 
-		//for (size_t i = 0; i < spotlightCount; i++)
-		//{
-		//	ImGui::Text(("Spotlight " + std::to_string(i)).c_str());
+		for (size_t i = 0; i < spotlightCount; i++)
+		{
+			ImGui::Text(("Spotlight " + std::to_string(i)).c_str());
 
-		//	ImGui::PushID(i);
-		//	spotlights[i].ExposeImGui(manuallyMoveLights);
-		//	ImGui::PopID();
-		//}
+			ImGui::PushID(i);
+			spotlights[i].ExposeImGui(manuallyMoveLights);
+			ImGui::PopID();
+		}
 
-		//ImGui::End();
+		ImGui::End();
 
 		//Texture
 		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);	//Size to fit content
@@ -695,7 +727,7 @@ void drawScene(Shader* shader, glm::mat4 view, glm::mat4 projection, ew::Mesh& c
 		{
 			float angle = glm::sin(glm::radians(-directionalLightAngle));
 
-			directionalLights[i].dir = glm::vec3(
+			directionalLights[i].dir = -glm::vec3(
 				//Defines the direction this axis is rotated towards			Defines what angle to rotate by
 				(cos(2 * glm::pi<float>() * (i / (float)directionalLightCount))) * angle,
 				1,

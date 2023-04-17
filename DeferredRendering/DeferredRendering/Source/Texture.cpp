@@ -44,7 +44,7 @@ GLuint Texture::CreateTexture(GLenum internalFormat, unsigned int width, unsigne
 
 	dimensions = glm::vec2(width, height);
 
-	glActiveTexture(GL_TEXTURE31);
+	glActiveTexture(GL_TEXTURE0);
 
 	glGenTextures(1, &texture);
 

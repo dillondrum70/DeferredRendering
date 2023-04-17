@@ -33,7 +33,7 @@ struct PointLight
     float intensity;
 };
 
-const int MAX_POINT_LIGHTS = 8;
+const int MAX_POINT_LIGHTS = 250;
 uniform PointLight _PointLight[MAX_POINT_LIGHTS];
 uniform int _UsedPointLights;
 
