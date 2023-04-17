@@ -34,6 +34,7 @@
 #include "FramebufferObject.h"
 
 void passLightInfo(Shader* shader, glm::mat4 view, glm::mat4 projection);
+void passTextureInfo(Shader* shader);
 
 void drawScene(Shader* shader, glm::mat4 view, glm::mat4 projection, 
 	ew::Mesh& cubeMesh, ew::Mesh& sphereMesh, ew::Mesh& cylinderMesh, ew::Mesh& planeMesh);
@@ -458,7 +459,7 @@ int main() {
 
 			gBufferShader.use();
 
-			texManager.BindTextures();	//This way outside of this step, all the texture slots can be used
+			passTextureInfo(&gBufferShader);
 
 			drawScene(&gBufferShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
 
@@ -469,29 +470,29 @@ int main() {
 
 			deferredLitShader.use();
 
-			glActiveTexture(GL_TEXTURE0 + positionBuffer.GetTexture());
+			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, positionBuffer.GetTexture());
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-			deferredLitShader.setInt("_GBuffer.position", positionBuffer.GetTexture());
+			deferredLitShader.setInt("_GBuffer.position", 0);
 
-			glActiveTexture(GL_TEXTURE0 + normalBuffer.GetTexture());
+			glActiveTexture(GL_TEXTURE1);
 			glBindTexture(GL_TEXTURE_2D, normalBuffer.GetTexture());
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-			deferredLitShader.setInt("_GBuffer.normal", normalBuffer.GetTexture());
+			deferredLitShader.setInt("_GBuffer.normal", 1);
 
-			glActiveTexture(GL_TEXTURE0 + albedoSpecularBuffer.GetTexture());
+			glActiveTexture(GL_TEXTURE2);
 			glBindTexture(GL_TEXTURE_2D, albedoSpecularBuffer.GetTexture());
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-			deferredLitShader.setInt("_GBuffer.albedoSpecular", albedoSpecularBuffer.GetTexture());
+			deferredLitShader.setInt("_GBuffer.albedoSpecular", 2);
 
 			passLightInfo(&deferredLitShader, view, projection);
 
@@ -521,9 +522,11 @@ int main() {
 			//Setup shadows in lit
 			litShader.use();
 
-			texManager.BindTextures();	//This way outside of this step, all the texture slots can be used
+			//texManager.BindTextures();	//This way outside of this step, all the texture slots can be used
 
-			glActiveTexture(GL_TEXTURE0 + shadowDepthBuffer.GetTexture());
+			passTextureInfo(&litShader);
+
+			glActiveTexture(GL_TEXTURE3);
 			glBindTexture(GL_TEXTURE_2D, shadowDepthBuffer.GetTexture());
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -531,7 +534,7 @@ int main() {
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
 			//Set border color to white to not change color
 			glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, &borderCol.x);
-			litShader.setInt("_ShadowMap", shadowDepthBuffer.GetTexture());
+			litShader.setInt("_ShadowMap", 3);
 			litShader.setMat4("_LightViewProj", lightProjection * lightView);
 			drawScene(&litShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
 
@@ -904,6 +907,37 @@ void passLightInfo(Shader* shader, glm::mat4 view, glm::mat4 projection)
 	}
 }
 
+void passTextureInfo(Shader* shader)
+{
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, texManager.textures[currentTextureIndex].GetTexture());
+	shader->setInt("_CurrentTexture.texSampler", 0);
+
+	if (texManager.textures[currentTextureIndex].GetNormalMap())
+	{
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, texManager.textures[currentTextureIndex].GetNormalMap()->GetTexture());
+		shader->setInt("_CurrentTexture.normSampler", 1);
+		shader->setInt("_CurrentTexture.hasNormal", true);
+	}
+	else
+	{
+		shader->setInt("_CurrentTexture.hasNormal", false);
+	}
+
+	if (texManager.textures[currentTextureIndex].GetSpecularMap())
+	{
+		glActiveTexture(GL_TEXTURE2);
+		glBindTexture(GL_TEXTURE_2D, texManager.textures[currentTextureIndex].GetSpecularMap()->GetTexture());
+		shader->setInt("_CurrentTexture.specSampler", 2);
+		shader->setInt("_CurrentTexture.hasSpecular", true);
+	}
+	else
+	{
+		shader->setInt("_CurrentTexture.hasSpecular", false);
+	}
+}
+
 //Author: Dillon Drummond
 void drawScene(Shader* shader, glm::mat4 view, glm::mat4 projection, ew::Mesh& cubeMesh, ew::Mesh& sphereMesh, ew::Mesh& cylinderMesh, ew::Mesh& planeMesh)
 {
@@ -912,12 +946,9 @@ void drawScene(Shader* shader, glm::mat4 view, glm::mat4 projection, ew::Mesh& c
 	//Textures
 	shader->setInt("_CurrentTexture", currentTextureIndex);
 
-	for (size_t i = 0; i < texManager.textureCount; i++)
-	{
-		texManager.textures[i].offset += texManager.textures[i].scrollSpeed * deltaTime;
-		shader->setVec2("_Textures[" + std::to_string(i) + "].scaleFactor", texManager.textures[i].scaleFactor);
-		shader->setVec2("_Textures[" + std::to_string(i) + "].offset", texManager.textures[i].offset);
-	}
+	texManager.textures[currentTextureIndex].offset += texManager.textures[currentTextureIndex].scrollSpeed * deltaTime;
+	shader->setVec2("_CurrentTexture.scaleFactor", texManager.textures[currentTextureIndex].scaleFactor);
+	shader->setVec2("_CurrentTexture.offset", texManager.textures[currentTextureIndex].offset);
 
 	shader->setVec3("_CamPos", camera.getPosition());
 

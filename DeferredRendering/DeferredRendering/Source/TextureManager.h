@@ -27,7 +27,7 @@ public:
 	Texture AddNormalMap(const char* normalFilePath, Texture *albedoTex);
 	Texture AddSpecularMap(const char* specFilePath, Texture *albedoTex);
 
-	void BindTextures();
+	void BindTexture(int index);
 };
 
 #endif

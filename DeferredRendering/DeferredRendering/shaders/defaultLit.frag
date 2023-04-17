@@ -89,9 +89,7 @@ struct Texture
     sampler2D normSampler;
 };
 
-const int MAX_TEXTURES = 10;
-uniform Texture _Textures[MAX_TEXTURES];
-uniform int _CurrentTexture;
+uniform Texture _CurrentTexture;
 
 in vec4 lightSpacePos;
 uniform sampler2D _ShadowMap;
@@ -273,12 +271,12 @@ void main()
 {   
     //TODO
     //Multiply by intensity (apply to X and Y value of normal so 0 will have normal pointing straight out in worldspace normal)
-    vec2 uv = (vert_out.UV + _Textures[_CurrentTexture].offset) * _Textures[_CurrentTexture].scaleFactor;
+    vec2 uv = (vert_out.UV + _CurrentTexture.offset) * _CurrentTexture.scaleFactor;
     vec3 normal = vec3(0, 0, 1);
 
-    if(_Textures[_CurrentTexture].hasNormal)
+    if(_CurrentTexture.hasNormal)
     {
-        normal =  (texture(_Textures[_CurrentTexture].normSampler, uv).rgb * 2) - 1;
+        normal =  (texture(_CurrentTexture.normSampler, uv).rgb * 2) - 1;
     }
 
     normal *= vec3(_Mat.normalIntensity, _Mat.normalIntensity, 1);
@@ -311,7 +309,7 @@ void main()
 //        shadow = calcShadow(_ShadowMap, lightSpacePos, bias);
 //    }
 
-    FragColor = texture(_Textures[_CurrentTexture].texSampler, uv) * vec4(ambient + ((diffuse + specular) * (1.0 - shadow)), 1.0f);
+    FragColor = texture(_CurrentTexture.texSampler, uv) * vec4(ambient + ((diffuse + specular) * (1.0 - shadow)), 1.0f);
 
     
 

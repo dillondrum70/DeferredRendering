@@ -47,13 +47,10 @@ Texture TextureManager::AddSpecularMap(const char* specFilePath, Texture *albedo
 	return speculars[specularCount - 1];
 }
 
-void TextureManager::BindTextures()
+void TextureManager::BindTexture(int index)
 {
-	for (int i = 0; i < textureCount; i++)
-	{
-		glActiveTexture(GL_TEXTURE0 + textures[i].texNumber);
-		glBindTexture(GL_TEXTURE_2D, textures[i].GetTexture());
-	}
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, textures[index].GetTexture());
 
 	for (int i = 0; i < normalCount; i++)
 	{
