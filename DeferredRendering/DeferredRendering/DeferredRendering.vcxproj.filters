@@ -210,5 +210,6 @@
     <None Include="shaders\depth.vert" />
     <None Include="shaders\depth.frag" />
     <None Include="shaders\depthToColor.frag" />
+    <None Include="shaders\gbuffer.frag" />
   </ItemGroup>
 </Project>

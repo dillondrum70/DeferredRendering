@@ -89,7 +89,7 @@ struct Texture
     sampler2D normSampler;
 };
 
-const int MAX_TEXTURES = 24;
+const int MAX_TEXTURES = 10;
 uniform Texture _Textures[MAX_TEXTURES];
 uniform int _CurrentTexture;
 
@@ -301,14 +301,15 @@ void main()
 
     float bias = max(_MaxBias * (1.0 - dot(normal, -_DirectionalLight[0].dir)), _MinBias);
     float shadow = 0;
-    if(_EnablePCF)
-    {
-        shadow = calcPCF(_ShadowMap, lightSpacePos, bias, _PCFSamples);
-    }
-    else
-    {
-        shadow = calcShadow(_ShadowMap, lightSpacePos, bias);
-    }
+////////////////// Shadows disabled
+//    if(_EnablePCF)
+//    {
+//        shadow = calcPCF(_ShadowMap, lightSpacePos, bias, _PCFSamples);
+//    }
+//    else
+//    {
+//        shadow = calcShadow(_ShadowMap, lightSpacePos, bias);
+//    }
 
     FragColor = texture(_Textures[_CurrentTexture].texSampler, uv) * vec4(ambient + ((diffuse + specular) * (1.0 - shadow)), 1.0f);
 

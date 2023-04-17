@@ -1,35 +1,69 @@
 #include "TextureManager.h"
 
+int TextureManager::currentTexId = 0;
+
 TextureManager::TextureManager()
 {
-	for (int i = 0; i < MAX_TEXTURES; i++)
-	{
-		textures[i] = Texture(GL_TEXTURE0 + i);
-	}
+	currentTexId = 0;
 }
 
 Texture TextureManager::AddTexture(const char* texFilePath)
 {
-	textures[textureCount] = Texture(GL_TEXTURE0 + textureCount);
+	textures[textureCount] = Texture(currentTexId);
 	textures[textureCount].CreateTexture(texFilePath);
 
-	glActiveTexture(textures[textureCount].texNumber);
+	glActiveTexture(GL_TEXTURE0 + textures[textureCount].texNumber);
 	glBindTexture(GL_TEXTURE_2D, textures[textureCount].GetTexture());
 
 	textureCount++;
+	currentTexId++;
 
 	return textures[textureCount - 1];
 }
 
-Texture TextureManager::AddNormalMap(const char* normalFilePath)
+Texture TextureManager::AddNormalMap(const char* normalFilePath, Texture *albedoTex)
 {
-	normals[normalCount] = Texture(GL_TEXTURE0 + MAX_TEXTURES + normalCount);
+	normals[normalCount] = Texture(currentTexId);
 	normals[normalCount].CreateTexture(normalFilePath);
 
-	glActiveTexture(normals[normalCount].texNumber);
-	glBindTexture(GL_TEXTURE_2D, normals[normalCount].GetTexture());
+	albedoTex->SetNormalMap(&normals[normalCount]);
 
 	normalCount++;
+	currentTexId++;
 
 	return normals[normalCount - 1];
+}
+
+Texture TextureManager::AddSpecularMap(const char* specFilePath, Texture *albedoTex)
+{
+	speculars[specularCount] = Texture(currentTexId);
+	speculars[specularCount].CreateTexture(specFilePath);
+
+	albedoTex->SetSpecularMap(&speculars[specularCount]);
+
+	specularCount++;
+	currentTexId++;
+
+	return speculars[specularCount - 1];
+}
+
+void TextureManager::BindTextures()
+{
+	for (int i = 0; i < textureCount; i++)
+	{
+		glActiveTexture(GL_TEXTURE0 + textures[i].texNumber);
+		glBindTexture(GL_TEXTURE_2D, textures[i].GetTexture());
+	}
+
+	for (int i = 0; i < normalCount; i++)
+	{
+		glActiveTexture(GL_TEXTURE0 + normals[i].texNumber);
+		glBindTexture(GL_TEXTURE_2D, normals[i].GetTexture());
+	}
+
+	for (int i = 0; i < specularCount; i++)
+	{
+		glActiveTexture(GL_TEXTURE0 + speculars[i].texNumber);
+		glBindTexture(GL_TEXTURE_2D, speculars[i].GetTexture());
+	}
 }

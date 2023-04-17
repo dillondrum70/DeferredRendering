@@ -14,6 +14,7 @@ private:
 
 	//Normal map is not required, but this is where the litShader gets the normal map
 	Texture* normalMap = nullptr;
+	Texture* specMap = nullptr;
 
 	glm::ivec2 dimensions = glm::ivec2(0);
 
@@ -57,8 +58,10 @@ public:
 	glm::ivec2 GetDimensions() { return dimensions; }
 	GLuint GetTexture() { return texture; }
 	Texture* GetNormalMap() { return normalMap; }
+	Texture* GetSpecularMap() { return specMap; }
 
 	void SetNormalMap(Texture* tex) { normalMap = tex; }
+	void SetSpecularMap(Texture* tex) { specMap = tex; }
 
 	GLuint CreateTexture(const char* texFilePath);
 	GLuint CreateTexture(GLenum internalFormat, unsigned int width, unsigned int height, GLenum format, GLenum type);

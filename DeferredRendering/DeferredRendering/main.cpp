@@ -104,11 +104,12 @@ bool phong = true;
 
 bool wireFrame = false;
 
-bool debugQuadEnabled = true;
+bool debugQuadEnabled = false;
 
 const std::string ASSET_PATH = "./Textures/";
 const std::string TEX_FILENAME_DIAMOND_PLATE = "DiamondPlate006C_4K_Color.jpg";
 const std::string NORM_FILENAME_DIAMOND_PLATE = "DiamondPlate006C_4K_NormalGL.jpg";
+const std::string SPECULAR_FILENAME_DIAMOND_PLATE = "DiamondPlate006C_4K_Specular.jpg";
 const std::string TEX_FILENAME_PAVING_STONES = "PavingStones130_4K_Color.jpg";
 const std::string NORM_FILENAME_PAVING_STONES = "PavingStones130_4K_NormalGL.jpg";
 
@@ -179,6 +180,8 @@ int main() {
 	Shader depthShader("shaders/depth.vert", "shaders/depth.frag");
 	Shader depthToColorShader("shaders/blit.vert", "shaders/depthToColor.frag");
 
+	Shader gBufferShader("shaders/defaultLit.vert", "shaders/gbuffer.frag");
+
 	ew::MeshData cubeMeshData;
 	ew::createCube(1.0f, 1.0f, 1.0f, cubeMeshData);
 	ew::MeshData sphereMeshData;
@@ -214,22 +217,37 @@ int main() {
 	//Load in textures and add them to array
 	
 	texManager.AddTexture((ASSET_PATH + TEX_FILENAME_DIAMOND_PLATE).c_str());
-	texManager.AddNormalMap((ASSET_PATH + NORM_FILENAME_DIAMOND_PLATE).c_str());
+	texManager.AddNormalMap((ASSET_PATH + NORM_FILENAME_DIAMOND_PLATE).c_str(), &texManager.textures[0]);
+	texManager.AddSpecularMap((ASSET_PATH + SPECULAR_FILENAME_DIAMOND_PLATE).c_str(), &texManager.textures[0]);
 	texManager.AddTexture((ASSET_PATH + TEX_FILENAME_PAVING_STONES).c_str());
-	texManager.AddNormalMap((ASSET_PATH + NORM_FILENAME_PAVING_STONES).c_str());
+	texManager.AddNormalMap((ASSET_PATH + NORM_FILENAME_PAVING_STONES).c_str(), &texManager.textures[1]);
 
 	//Set texture samplers
 	for (size_t i = 0; i < texManager.textureCount; i++)
 	{
 		//Set texture sampler to texture unit number
-		litShader.setInt("_Textures[" + std::to_string(i) + "].texSampler", i);
-		bool hasNormal = i < MAX_NORMALS;
+		litShader.setInt("_Textures[" + std::to_string(i) + "].texSampler", texManager.textures[i].texNumber);
+		gBufferShader.setInt("_Textures[" + std::to_string(i) + "].texSampler", texManager.textures[i].texNumber);
+
+		bool hasNormal = texManager.textures[i].GetNormalMap() != nullptr;
 		litShader.setInt("_Textures[" + std::to_string(i) + "].hasNormal", hasNormal);
+		gBufferShader.setInt("_Textures[" + std::to_string(i) + "].hasNormal", hasNormal);
 
 		if (hasNormal)
 		{
-			litShader.setInt("_Textures[" + std::to_string(i) + "].normSampler", MAX_TEXTURES + i);	//Normals stored in back portion of the 32 textures OpenGL supports
+			litShader.setInt("_Textures[" + std::to_string(i) + "].normSampler", texManager.textures[i].GetNormalMap()->texNumber);
+			gBufferShader.setInt("_Textures[" + std::to_string(i) + "].normSampler", texManager.textures[i].GetNormalMap()->texNumber);
 		}
+
+		/*bool hasSpecular = texManager.textures[i].GetSpecularMap() != nullptr;
+		litShader.setInt("_Textures[" + std::to_string(i) + "].hasSpecular", hasSpecular);
+		gBufferShader.setInt("_Textures[" + std::to_string(i) + "].hasSpecular", hasSpecular);
+
+		if (hasSpecular)
+		{
+			litShader.setInt("_Textures[" + std::to_string(i) + "].normSampler", texManager.textures[i].GetSpecularMap()->texNumber);
+			gBufferShader.setInt("_Textures[" + std::to_string(i) + "].normSampler", texManager.textures[i].GetSpecularMap()->texNumber);
+		}*/
 	}
 
 	//Initialize shape transforms
@@ -330,6 +348,17 @@ int main() {
 	BloomEffect bloomEffect = BloomEffect(bloomShader, "Bloom", &blurBloomEffect);
 	fbo.AddEffect(&bloomEffect);
 
+	Texture positionBuffer;
+	positionBuffer.CreateTexture(GL_RGBA, SCREEN_WIDTH, SCREEN_HEIGHT, GL_RGBA, GL_FLOAT);
+	Texture normalBuffer;
+	normalBuffer.CreateTexture(GL_RGBA, SCREEN_WIDTH, SCREEN_HEIGHT, GL_RGBA, GL_FLOAT);
+	Texture albedoSpecularBuffer;
+	albedoSpecularBuffer.CreateTexture(GL_RGBA, SCREEN_WIDTH, SCREEN_HEIGHT, GL_RGBA, GL_FLOAT);
+
+	FramebufferObject gBuffer;
+	gBuffer.AddColorAttachment(positionBuffer, GL_COLOR_ATTACHMENT0);
+	gBuffer.AddColorAttachment(normalBuffer, GL_COLOR_ATTACHMENT1);
+	gBuffer.AddColorAttachment(albedoSpecularBuffer, GL_COLOR_ATTACHMENT2);
 	
 	while (!glfwWindowShouldClose(window)) {
 		processInput(window);
@@ -348,21 +377,22 @@ int main() {
 		deltaTime = time - lastFrameTime;
 		lastFrameTime = time;
 
+		////////////////////////// Shadows Disabled
 		//Set up shadow mask framebuffer object
-		shadowFbo.Bind();
-		glClear(GL_DEPTH_BUFFER_BIT);
-		glDrawBuffer(GL_NONE);
-		glReadBuffer(GL_NONE);
+		//shadowFbo.Bind();
+		//glClear(GL_DEPTH_BUFFER_BIT);
+		//glDrawBuffer(GL_NONE);
+		//glReadBuffer(GL_NONE);
 
-		if (enableSecondDepth)
-		{
-			glCullFace(GL_FRONT);
-		}
+		//if (enableSecondDepth)
+		//{
+		//	glCullFace(GL_FRONT);
+		//}
 
-		//Depth-only pass for shadow mask
+		////Depth-only pass for shadow mask
 		glm::mat4 lightView = glm::lookAt(shadowFrustumOrigin - (glm::normalize(directionalLights[0].dir) * shadowFrustumExtents.z), shadowFrustumOrigin, glm::vec3(0, 1, 0));
 		glm::mat4 lightProjection = glm::ortho(-shadowFrustumExtents.x, shadowFrustumExtents.x, -shadowFrustumExtents.y, shadowFrustumExtents.y, shadowDeathNearPlane, shadowFrustumExtents.z * 2.f);
-		drawScene(&depthShader, lightView, lightProjection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
+		//drawScene(&depthShader, lightView, lightProjection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
 
 		//Bind and clear main frame buffer
 		fbo.Bind();
@@ -380,6 +410,9 @@ int main() {
 
 		//Setup shadows in lit
 		litShader.use();
+
+		texManager.BindTextures();	//This way outside of this step, all the texture slots can be used
+
 		glActiveTexture(GL_TEXTURE0 + shadowDepthBuffer.GetTexture());
 		glBindTexture(GL_TEXTURE_2D, shadowDepthBuffer.GetTexture());
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
