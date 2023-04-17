@@ -33,6 +33,8 @@
 
 #include "FramebufferObject.h"
 
+void passLightInfo(Shader* shader, glm::mat4 view, glm::mat4 projection);
+
 void drawScene(Shader* shader, glm::mat4 view, glm::mat4 projection, 
 	ew::Mesh& cubeMesh, ew::Mesh& sphereMesh, ew::Mesh& cylinderMesh, ew::Mesh& planeMesh);
 
@@ -191,6 +193,8 @@ int main() {
 
 	Shader gBufferShader("shaders/defaultLit.vert", "shaders/gbuffer.frag");
 	Shader albedoSpecShader("shaders/blit.vert", "shaders/albedoSpecBlit.frag");
+
+	Shader deferredLitShader("shaders/blit.vert", "shaders/deferredLit.frag");
 
 	ew::MeshData cubeMeshData;
 	ew::createCube(1.0f, 1.0f, 1.0f, cubeMeshData);
@@ -417,22 +421,29 @@ int main() {
 		deltaTime = time - lastFrameTime;
 		lastFrameTime = time;
 
-		////////////////////////// Shadows Disabled
-		//Set up shadow mask framebuffer object
-		//shadowFbo.Bind();
-		//glClear(GL_DEPTH_BUFFER_BIT);
-		//glDrawBuffer(GL_NONE);
-		//glReadBuffer(GL_NONE);
-
-		//if (enableSecondDepth)
-		//{
-		//	glCullFace(GL_FRONT);
-		//}
-
-		////Depth-only pass for shadow mask
 		glm::mat4 lightView = glm::lookAt(shadowFrustumOrigin - (glm::normalize(directionalLights[0].dir) * shadowFrustumExtents.z), shadowFrustumOrigin, glm::vec3(0, 1, 0));
 		glm::mat4 lightProjection = glm::ortho(-shadowFrustumExtents.x, shadowFrustumExtents.x, -shadowFrustumExtents.y, shadowFrustumExtents.y, shadowDeathNearPlane, shadowFrustumExtents.z * 2.f);
-		//drawScene(&depthShader, lightView, lightProjection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
+
+		if (!deferredRenderingEnabled)
+		{
+			////////////////////////// Shadows Disabled
+			////Set up shadow mask framebuffer object
+			//shadowFbo.Bind();
+			//glClear(GL_DEPTH_BUFFER_BIT);
+			//glDrawBuffer(GL_NONE);
+			//glReadBuffer(GL_NONE);
+
+			//if (enableSecondDepth)
+			//{
+			//	glCullFace(GL_FRONT);
+			//}
+
+			////Depth-only pass for shadow mask
+			//drawScene(&depthShader, lightView, lightProjection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
+		}
+		
+
+		
 
 		glm::mat4 view = camera.getViewMatrix();
 		glm::mat4 projection = camera.getProjectionMatrix();
@@ -450,71 +461,107 @@ int main() {
 			texManager.BindTextures();	//This way outside of this step, all the texture slots can be used
 
 			drawScene(&gBufferShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
+
+			fbo.Bind();
+			fbo.Clear(bgColor);
+			GLenum buffers[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+			glDrawBuffers(2, buffers);
+
+			deferredLitShader.use();
+
+			glActiveTexture(GL_TEXTURE0 + positionBuffer.GetTexture());
+			glBindTexture(GL_TEXTURE_2D, positionBuffer.GetTexture());
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+			deferredLitShader.setInt("_GBuffer.position", positionBuffer.GetTexture());
+
+			glActiveTexture(GL_TEXTURE0 + normalBuffer.GetTexture());
+			glBindTexture(GL_TEXTURE_2D, normalBuffer.GetTexture());
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+			deferredLitShader.setInt("_GBuffer.normal", normalBuffer.GetTexture());
+
+			glActiveTexture(GL_TEXTURE0 + albedoSpecularBuffer.GetTexture());
+			glBindTexture(GL_TEXTURE_2D, albedoSpecularBuffer.GetTexture());
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+			deferredLitShader.setInt("_GBuffer.albedoSpecular", albedoSpecularBuffer.GetTexture());
+
+			passLightInfo(&deferredLitShader, view, projection);
+
+			deferredLitShader.setMat4("_Model", ew::translate(quadTransform.position) * ew::scale(quadTransform.scale));
+			quadMesh.draw();
+
+
+			//unlitShader.use();
+
+			//Draw light as a small sphere using unlit shader, ironically.
+			//drawLights(&unlitShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
 		}
-
-		//Bind and clear main frame buffer
-		fbo.Bind();
-		fbo.Clear(bgColor);
-		GLenum buffers[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
-		glDrawBuffers(2, buffers);
-
-		if(enableSecondDepth)
+		else
 		{
-			glCullFace(GL_BACK);
+			//Shadows + Forward Rendering
+			//Bind and clear main frame buffer
+			fbo.Bind();
+			fbo.Clear(bgColor);
+			GLenum buffers[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+			glDrawBuffers(2, buffers);
+
+			if(enableSecondDepth)
+			{
+				glCullFace(GL_BACK);
+			}
+
+			//Setup shadows in lit
+			litShader.use();
+
+			texManager.BindTextures();	//This way outside of this step, all the texture slots can be used
+
+			glActiveTexture(GL_TEXTURE0 + shadowDepthBuffer.GetTexture());
+			glBindTexture(GL_TEXTURE_2D, shadowDepthBuffer.GetTexture());
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+			//Set border color to white to not change color
+			glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, &borderCol.x);
+			litShader.setInt("_ShadowMap", shadowDepthBuffer.GetTexture());
+			litShader.setMat4("_LightViewProj", lightProjection * lightView);
+			drawScene(&litShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
+
+			//Draw wireframe cube of shadow frustum
+			
+			unlitShader.use();
+
+			//Draw light as a small sphere using unlit shader, ironically.
+			drawLights(&unlitShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
+
+			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+			glDisable(GL_CULL_FACE);
+
+			glm::mat4 frustPos = glm::translate(glm::mat4(1), shadowFrustumOrigin);
+			glm::mat4 frustRot = glm::toMat4(glm::quatLookAt(glm::normalize(directionalLights[0].dir), glm::vec3(0, 1, 0)));
+			glm::mat4 frustScale = glm::scale(glm::mat4(1), glm::vec3(2 * shadowFrustumExtents.x, 2 * shadowFrustumExtents.y, 2 * shadowFrustumExtents.z));
+			
+
+			unlitShader.setMat4("_Model", frustPos * frustRot * frustScale);
+			unlitShader.setMat4("_View", view);
+			unlitShader.setMat4("_Projection", projection);
+			unlitShader.setVec3("_Color", glm::vec3(1, 1, 1));
+			cubeMesh.draw();
 		}
-
-		//Setup shadows in lit
-		litShader.use();
-
-		texManager.BindTextures();	//This way outside of this step, all the texture slots can be used
-
-		glActiveTexture(GL_TEXTURE0 + shadowDepthBuffer.GetTexture());
-		glBindTexture(GL_TEXTURE_2D, shadowDepthBuffer.GetTexture());
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-		//Set border color to white to not change color
-		glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, &borderCol.x);
-		litShader.setInt("_ShadowMap", shadowDepthBuffer.GetTexture());
-		litShader.setMat4("_LightViewProj", lightProjection * lightView);
-		drawScene(&litShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
-
-		//Draw wireframe cube of shadow frustum
-		
-		unlitShader.use();
-
-		/*glm::vec3 forward = -glm::normalize(directionalLights[0].dir);
-		glm::vec3 right = glm::cross(glm::vec3(0, 1, 0), forward);
-		glm::vec3 up = glm::cross(forward, right);
-
-		glm::mat4 rot = {
-			right.x, up.x, forward.x, 0,
-			right.y, up.y, forward.y, 0,
-			right.z, up.z, forward.z, 0,
-			0, 0,0, 1
-		};*/
-
-		//Draw light as a small sphere using unlit shader, ironically.
-		drawLights(&unlitShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
-
-		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-		glDisable(GL_CULL_FACE);
-
-		glm::mat4 frustPos = glm::translate(glm::mat4(1), shadowFrustumOrigin);
-		glm::mat4 frustRot = glm::toMat4(glm::quatLookAt(glm::normalize(directionalLights[0].dir), glm::vec3(0, 1, 0)));
-		glm::mat4 frustScale = glm::scale(glm::mat4(1), glm::vec3(2 * shadowFrustumExtents.x, 2 * shadowFrustumExtents.y, 2 * shadowFrustumExtents.z));
-		
-
-		unlitShader.setMat4("_Model", frustPos * frustRot * frustScale);
-		unlitShader.setMat4("_View", view);
-		unlitShader.setMat4("_Projection", projection);
-		unlitShader.setVec3("_Color", glm::vec3(1, 1, 1));
-		cubeMesh.draw();
 
 		glEnable(GL_CULL_FACE);
 		glPolygonMode(GL_FRONT_AND_BACK, wireFrame ? GL_LINE : GL_FILL);
 
+
+		//Post Processing
 		//After drawing, bind to default framebuffer, clear it, and draw the fullscreen quad with the shader
 		fbo.Unbind(glm::vec2(SCREEN_WIDTH, SCREEN_HEIGHT));
 		glClearColor(bgColor.r, bgColor.g, bgColor.b, 1.0f);
@@ -524,6 +571,8 @@ int main() {
 		fbo.SetupShader();
 		quadMesh.draw();
 
+
+		//Debug Quads
 		//Draw debug quad with shadow mask depth buffer
 		if (debugQuadEnabled)
 		{
@@ -682,7 +731,7 @@ int main() {
 		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);	//Size to fit content
 		ImGui::Begin("Directional Light");
 
-		//ImGui::SliderInt("Light Count", &directionalLightCount, 0, MAX_DIRECTIONAL_LIGHTS);
+		ImGui::SliderInt("Light Count", &directionalLightCount, 0, MAX_DIRECTIONAL_LIGHTS);
 
 		if (!manuallyMoveLights)
 		{
@@ -759,10 +808,8 @@ int main() {
 	return 0;
 }
 
-//Author: Dillon Drummond
-void drawScene(Shader* shader, glm::mat4 view, glm::mat4 projection, ew::Mesh& cubeMesh, ew::Mesh& sphereMesh, ew::Mesh& cylinderMesh, ew::Mesh& planeMesh)
+void passLightInfo(Shader* shader, glm::mat4 view, glm::mat4 projection)
 {
-	//Draw
 	shader->use();
 	shader->setVec3("_BrightColor", brightColor);	//Used in bloom
 	shader->setFloat("_BrightnessThreshold", brightnessThreshold);	//Used in bloom
@@ -773,20 +820,20 @@ void drawScene(Shader* shader, glm::mat4 view, glm::mat4 projection, ew::Mesh& c
 	shader->setInt("_EnablePCF", enablePCF);
 	shader->setInt("_PCFSamples", pcfSamples);
 
-	//Textures
-	shader->setInt("_CurrentTexture", currentTextureIndex);
-
-	for (size_t i = 0; i < texManager.textureCount; i++)
-	{
-		texManager.textures[i].offset += texManager.textures[i].scrollSpeed * deltaTime;
-		shader->setVec2("_Textures[" + std::to_string(i) + "].scaleFactor", texManager.textures[i].scaleFactor);
-		shader->setVec2("_Textures[" + std::to_string(i) + "].offset", texManager.textures[i].offset);
-	}
-
 	//Attenuation Uniforms
 	shader->setFloat("_Attenuation.constant", constantAttenuation);
 	shader->setFloat("_Attenuation.linear", linearAttenuation);
 	shader->setFloat("_Attenuation.quadratic", quadraticAttenuation);
+
+	//Material Uniforms
+	shader->setVec3("_Mat.color", defaultMat.color);
+	shader->setFloat("_Mat.ambientCoefficient", defaultMat.ambientK);
+	shader->setFloat("_Mat.diffuseCoefficient", defaultMat.diffuseK);
+	shader->setFloat("_Mat.specularCoefficient", defaultMat.specularK);
+	shader->setFloat("_Mat.shininess", defaultMat.shininess);
+	shader->setFloat("_Mat.normalIntensity", defaultMat.normalIntensity);
+
+	shader->setInt("_Phong", phong);
 
 	//Point Light Uniforms
 	shader->setInt("_UsedPointLights", pointLightCount);
@@ -855,18 +902,24 @@ void drawScene(Shader* shader, glm::mat4 view, glm::mat4 projection, ew::Mesh& c
 		shader->setFloat("_Spotlight[" + std::to_string(i) + "].maxAngle", glm::cos(glm::radians(spotlights[i].outerAngle)));
 		shader->setFloat("_Spotlight[" + std::to_string(i) + "].falloff", spotlights[i].angleFalloff);
 	}
+}
 
-	//Material Uniforms
-	shader->setVec3("_Mat.color", defaultMat.color);
-	shader->setFloat("_Mat.ambientCoefficient", defaultMat.ambientK);
-	shader->setFloat("_Mat.diffuseCoefficient", defaultMat.diffuseK);
-	shader->setFloat("_Mat.specularCoefficient", defaultMat.specularK);
-	shader->setFloat("_Mat.shininess", defaultMat.shininess);
-	shader->setFloat("_Mat.normalIntensity", defaultMat.normalIntensity);
+//Author: Dillon Drummond
+void drawScene(Shader* shader, glm::mat4 view, glm::mat4 projection, ew::Mesh& cubeMesh, ew::Mesh& sphereMesh, ew::Mesh& cylinderMesh, ew::Mesh& planeMesh)
+{
+	passLightInfo(shader, view, projection);
+
+	//Textures
+	shader->setInt("_CurrentTexture", currentTextureIndex);
+
+	for (size_t i = 0; i < texManager.textureCount; i++)
+	{
+		texManager.textures[i].offset += texManager.textures[i].scrollSpeed * deltaTime;
+		shader->setVec2("_Textures[" + std::to_string(i) + "].scaleFactor", texManager.textures[i].scaleFactor);
+		shader->setVec2("_Textures[" + std::to_string(i) + "].offset", texManager.textures[i].offset);
+	}
 
 	shader->setVec3("_CamPos", camera.getPosition());
-
-	shader->setInt("_Phong", phong);
 
 	//Draw cube
 	glm::mat4 cubeModel = cubeTransform.getModelMatrix();
