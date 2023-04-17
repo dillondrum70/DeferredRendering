@@ -292,7 +292,9 @@ void main()
 //        shadow = calcShadow(_ShadowMap, lightSpacePos, bias);
 //    }
 
-    FragColor = vec4(ambient + ((diffuse + specular) * albedo * (1.0 - shadow)), 1.0f);
+    diffuse *=  albedo;
+    
+    FragColor = vec4(ambient + ((diffuse + specular) * (1.0 - shadow)), 1.0f);
     
 
     //FragColor = vec4(vert_out.UV.x, vert_out.UV.y, 0, 1);

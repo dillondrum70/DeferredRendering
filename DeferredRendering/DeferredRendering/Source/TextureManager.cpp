@@ -12,7 +12,7 @@ Texture TextureManager::AddTexture(const char* texFilePath)
 	textures[textureCount] = Texture(currentTexId);
 	textures[textureCount].CreateTexture(texFilePath);
 
-	glActiveTexture(GL_TEXTURE0 + textures[textureCount].texNumber);
+	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, textures[textureCount].GetTexture());
 
 	textureCount++;

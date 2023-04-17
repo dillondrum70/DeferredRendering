@@ -31,7 +31,7 @@ void BloomEffect::SetupShader(const std::vector<unsigned int>& colorBuffers)
 	unsigned int tex = _blurEffect->Blur(colorBuffers[1], horizontal);
 
 	//Base color map
-	glActiveTexture(GL_TEXTURE0 + colorBuffers[0]);
+	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, colorBuffers[0]);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
@@ -39,7 +39,7 @@ void BloomEffect::SetupShader(const std::vector<unsigned int>& colorBuffers)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
 	//Blurred brightness map
-	glActiveTexture(GL_TEXTURE0 + tex);
+	glActiveTexture(GL_TEXTURE1);
 	glBindTexture(GL_TEXTURE_2D, tex);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
@@ -48,8 +48,8 @@ void BloomEffect::SetupShader(const std::vector<unsigned int>& colorBuffers)
 
 	//Set sampler2Ds for bloom shader
 	_shader->use();
-	_shader->setInt("_ColorTex", colorBuffers[0]);
-	_shader->setInt("_BlurredBrightTex", tex);
+	_shader->setInt("_ColorTex", 0);
+	_shader->setInt("_BlurredBrightTex", 1);
 
 	//Bind default buffer so the next draw goes to the screen
 	_parent->Unbind(_parent->GetDimensions());

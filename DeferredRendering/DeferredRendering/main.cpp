@@ -235,40 +235,11 @@ int main() {
 	glDepthFunc(GL_LESS);
 
 	//Load in textures and add them to array
-	
 	texManager.AddTexture((ASSET_PATH + TEX_FILENAME_DIAMOND_PLATE).c_str());
 	texManager.AddNormalMap((ASSET_PATH + NORM_FILENAME_DIAMOND_PLATE).c_str(), &texManager.textures[0]);
 	texManager.AddSpecularMap((ASSET_PATH + SPECULAR_FILENAME_DIAMOND_PLATE).c_str(), &texManager.textures[0]);
 	texManager.AddTexture((ASSET_PATH + TEX_FILENAME_PAVING_STONES).c_str());
 	texManager.AddNormalMap((ASSET_PATH + NORM_FILENAME_PAVING_STONES).c_str(), &texManager.textures[1]);
-
-	//Set texture samplers
-	for (size_t i = 0; i < texManager.textureCount; i++)
-	{
-		//Set texture sampler to texture unit number
-		litShader.setInt("_Textures[" + std::to_string(i) + "].texSampler", texManager.textures[i].texNumber);
-		gBufferShader.setInt("_Textures[" + std::to_string(i) + "].texSampler", texManager.textures[i].texNumber);
-
-		bool hasNormal = texManager.textures[i].GetNormalMap() != nullptr;
-		litShader.setInt("_Textures[" + std::to_string(i) + "].hasNormal", hasNormal);
-		gBufferShader.setInt("_Textures[" + std::to_string(i) + "].hasNormal", hasNormal);
-
-		if (hasNormal)
-		{
-			litShader.setInt("_Textures[" + std::to_string(i) + "].normSampler", texManager.textures[i].GetNormalMap()->texNumber);
-			gBufferShader.setInt("_Textures[" + std::to_string(i) + "].normSampler", texManager.textures[i].GetNormalMap()->texNumber);
-		}
-
-		bool hasSpecular = texManager.textures[i].GetSpecularMap() != nullptr;
-		litShader.setInt("_Textures[" + std::to_string(i) + "].hasSpecular", hasSpecular);
-		gBufferShader.setInt("_Textures[" + std::to_string(i) + "].hasSpecular", hasSpecular);
-
-		if (hasSpecular)
-		{
-			litShader.setInt("_Textures[" + std::to_string(i) + "].specSampler", texManager.textures[i].GetSpecularMap()->texNumber);
-			gBufferShader.setInt("_Textures[" + std::to_string(i) + "].specSampler", texManager.textures[i].GetSpecularMap()->texNumber);
-		}
-	}
 
 	//Initialize shape transforms
 	cubeTransform.position = glm::vec3(-2.0f, -.5f, 0.0f);
@@ -453,7 +424,7 @@ int main() {
 		{
 			//Bind the G Buffer
 			gBuffer.Bind();
-			gBuffer.Clear(bgColor, 0.0f);
+			gBuffer.Clear(bgColor);
 			GLenum gBuffers[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
 			glDrawBuffers(3, gBuffers);
 
@@ -579,7 +550,7 @@ int main() {
 		//Draw debug quad with shadow mask depth buffer
 		if (debugQuadEnabled)
 		{
-			glActiveTexture(GL_TEXTURE0 + shadowDepthBuffer.GetTexture());
+			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, shadowDepthBuffer.GetTexture());
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -587,7 +558,7 @@ int main() {
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 
 			depthToColorShader.use();
-			depthToColorShader.setInt("_ColorTex", shadowDepthBuffer.GetTexture());
+			depthToColorShader.setInt("_ColorTex", 0);
 			//depthToColorShader.setVec2("_Offset", glm::vec2(debugQuadTransform.position.x, debugQuadTransform.position.y));
 			//depthToColorShader.setFloat("_Near", shadowDeathNearPlane);
 			//depthToColorShader.setFloat("_Far", 2 * shadowFrustumExtents.z);
@@ -601,7 +572,7 @@ int main() {
 		if (gBufferQuadsEnabled && deferredRenderingEnabled)
 		{
 			//Position
-			glActiveTexture(GL_TEXTURE0 + positionBuffer.GetTexture());
+			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, positionBuffer.GetTexture());
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -609,13 +580,13 @@ int main() {
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 
 			blitShader->use();
-			blitShader->setInt("_ColorTex", positionBuffer.GetTexture());
+			blitShader->setInt("_ColorTex", 0);
 			blitShader->setMat4("_Model", ew::translate(positionQuadTransform.position) * ew::scale(positionQuadTransform.scale));
 
 			positionQuadMesh.draw();
 
 			//Normal
-			glActiveTexture(GL_TEXTURE0 + normalBuffer.GetTexture());
+			glActiveTexture(GL_TEXTURE1);
 			glBindTexture(GL_TEXTURE_2D, normalBuffer.GetTexture());
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -623,13 +594,13 @@ int main() {
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 
 			blitShader->use();
-			blitShader->setInt("_ColorTex", normalBuffer.GetTexture());
+			blitShader->setInt("_ColorTex", 1);
 			blitShader->setMat4("_Model", ew::translate(normalQuadTransform.position) * ew::scale(normalQuadTransform.scale));
 
 			normalQuadMesh.draw();
 			
 			//Albedo
-			glActiveTexture(GL_TEXTURE0 + albedoSpecularBuffer.GetTexture());
+			glActiveTexture(GL_TEXTURE2);
 			glBindTexture(GL_TEXTURE_2D, albedoSpecularBuffer.GetTexture());
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -638,7 +609,7 @@ int main() {
 
 			albedoSpecShader.use();
 			albedoSpecShader.setVec2("_Offset", glm::vec2(0, 0));
-			albedoSpecShader.setInt("_ColorTex", albedoSpecularBuffer.GetTexture());
+			albedoSpecShader.setInt("_ColorTex", 2);
 			albedoSpecShader.setInt("_Albedo", true);
 			albedoSpecShader.setMat4("_Model", ew::translate(albedoQuadTransform.position) * ew::scale(albedoQuadTransform.scale));
 

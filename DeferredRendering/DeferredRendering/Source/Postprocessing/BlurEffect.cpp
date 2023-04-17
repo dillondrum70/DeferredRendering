@@ -55,7 +55,7 @@ void BlurEffect::SetupShader(const std::vector<unsigned int>& colorBuffers)
 	unsigned int tex = Blur(colorBuffers[0], horizontal);
 
 	//Blurred map
-	glActiveTexture(GL_TEXTURE0 + tex);
+	glActiveTexture(GL_TEXTURE1);
 	glBindTexture(GL_TEXTURE_2D, tex);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
@@ -64,7 +64,7 @@ void BlurEffect::SetupShader(const std::vector<unsigned int>& colorBuffers)
 
 	//Set sampler2Ds for bloom shader
 	_shader->use();
-	_shader->setInt("_ColorTex", tex);
+	_shader->setInt("_ColorTex", 1);
 	_shader->setFloat("_BlurStrength", _blurStrength);
 	_shader->setInt("horizontal", horizontal);
 	//Bind default buffer so the next draw goes to the screen
@@ -102,11 +102,12 @@ unsigned int BlurEffect::Blur(unsigned int colorBuffer, bool& horizontal)
 		blurFbos[horizontal]->Bind();
 
 		//Bind last texture drawn to
+		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, tex);
 
 		//Shader variables and draw
 		_shader->setInt("horizontal", horizontal);
-		_shader->setInt("_ColorTex", tex);
+		_shader->setInt("_ColorTex", 1);
 		_quadMesh->draw();
 
 		//Switch blur direction for next pass
