@@ -59,5 +59,6 @@ void main()
     gBufNormal = vec4(normalize(normal), 1);
     /////
 
-    gBufAlbedoSpecular = vec4(texture(_Textures[_CurrentTexture].texSampler, uv).rgb, texture(_Textures[_CurrentTexture].specSampler, uv).a);
+    gBufAlbedoSpecular.rgb = texture(_Textures[_CurrentTexture].texSampler, uv).rgb;
+    gBufAlbedoSpecular.a = texture(_Textures[_CurrentTexture].specSampler, uv).r;
 }
