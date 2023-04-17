@@ -227,8 +227,8 @@ int main() {
 	glCullFace(GL_BACK);
 
 	//Enable blending
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	//glEnable(GL_BLEND);
+	//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	//Enable depth testing
 	glEnable(GL_DEPTH_TEST);
@@ -424,7 +424,7 @@ int main() {
 		{
 			//Bind the G Buffer
 			gBuffer.Bind();
-			gBuffer.Clear(bgColor);
+			gBuffer.Clear(bgColor, 0.0f);
 			GLenum gBuffers[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
 			glDrawBuffers(3, gBuffers);
 

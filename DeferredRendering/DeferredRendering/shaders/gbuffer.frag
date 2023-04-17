@@ -1,6 +1,6 @@
 #version 450                          
-layout (location = 0) out vec4 gBufPosition;
-layout (location = 1) out vec4 gBufNormal;
+layout (location = 0) out vec3 gBufPosition;
+layout (location = 1) out vec3 gBufNormal;
 layout (location = 2) out vec4 gBufAlbedoSpecular;
 
 in struct Vertex
@@ -52,9 +52,9 @@ void main()
     normal = vert_out.TBN * normal;
 
     ///// OpenGl doesn't spit anything out through these unless they are vec4s even though vec3s would be more space efficient
-	gBufPosition = vec4(vert_out.WorldPos, 1);
+	gBufPosition = vert_out.WorldPos;
 
-    gBufNormal = vec4(normalize(normal), 1);
+    gBufNormal = normalize(normal);
     /////
 
     gBufAlbedoSpecular.rgb = texture(_CurrentTexture.texSampler, uv).rgb;
