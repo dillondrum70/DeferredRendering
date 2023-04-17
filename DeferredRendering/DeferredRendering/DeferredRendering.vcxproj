@@ -194,6 +194,7 @@
     <ClInclude Include="Source\TextureManager.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\albedoSpecBlit.frag" />
     <None Include="shaders\blit.frag" />
     <None Include="shaders\blit.vert" />
     <None Include="shaders\bloom.frag" />

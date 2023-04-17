@@ -104,6 +104,8 @@ bool phong = true;
 
 bool wireFrame = false;
 
+bool gBufferQuadsEnabled = true;
+
 bool debugQuadEnabled = false;
 
 const std::string ASSET_PATH = "./Textures/";
@@ -127,6 +129,10 @@ ew::Transform cylinderTransform;
 ew::Transform lightTransform;
 ew::Transform quadTransform;
 ew::Transform debugQuadTransform;
+ew::Transform positionQuadTransform;
+ew::Transform normalQuadTransform;
+ew::Transform albedoQuadTransform;
+ew::Transform specularQuadTransform;
 
 glm::vec3 shadowFrustumOrigin = glm::vec3(0, 0, 0);
 glm::vec3 shadowFrustumExtents = glm::vec3(10, 10, 10);
@@ -183,6 +189,7 @@ int main() {
 	Shader depthToColorShader("shaders/blit.vert", "shaders/depthToColor.frag");
 
 	Shader gBufferShader("shaders/defaultLit.vert", "shaders/gbuffer.frag");
+	Shader albedoSpecShader("shaders/blit.vert", "shaders/albedoSpecBlit.frag");
 
 	ew::MeshData cubeMeshData;
 	ew::createCube(1.0f, 1.0f, 1.0f, cubeMeshData);
@@ -203,6 +210,11 @@ int main() {
 	ew::Mesh cylinderMesh(&cylinderMeshData);
 	ew::Mesh quadMesh(&quadMeshData);
 	ew::Mesh debugQuadMesh(&debugQuadMeshData);
+
+	ew::Mesh positionQuadMesh(&debugQuadMeshData);
+	ew::Mesh normalQuadMesh(&debugQuadMeshData);
+	ew::Mesh albedoQuadMesh(&debugQuadMeshData);
+	ew::Mesh specularQuadMesh(&debugQuadMeshData);
 
 	//Enable back face culling
 	glEnable(GL_CULL_FACE);
@@ -263,6 +275,15 @@ int main() {
 
 	debugQuadTransform.position = glm::vec3(.5f, 0.5f, 0.0f);
 	debugQuadTransform.scale = glm::vec3(.3f, .3f * (SCREEN_WIDTH / (float)SCREEN_HEIGHT), 1);
+
+	positionQuadTransform.position = glm::vec3(.5f, 0.5f, 0.0f);
+	positionQuadTransform.scale = glm::vec3(.2f, .2f * (SCREEN_WIDTH / (float)SCREEN_HEIGHT), 1);
+	normalQuadTransform.position = glm::vec3(.3f, 0.3f, 0.0f);
+	normalQuadTransform.scale = glm::vec3(.2f, .2f * (SCREEN_WIDTH / (float)SCREEN_HEIGHT), 1);
+	albedoQuadTransform.position = glm::vec3(.3f, 0.5f, 0.0f);
+	albedoQuadTransform.scale = glm::vec3(.2f, .2f * (SCREEN_WIDTH / (float)SCREEN_HEIGHT), 1);
+	specularQuadTransform.position = glm::vec3(.5f, 0.3f, 0.0f);
+	specularQuadTransform.scale = glm::vec3(.2f, .2f * (SCREEN_WIDTH / (float)SCREEN_HEIGHT), 1);
 
 	pointLights[0].color = glm::vec3(1, 1, 1);
 	pointLights[1].color = glm::vec3(0, 1, 1);
@@ -519,6 +540,59 @@ int main() {
 			depthToColorShader.setMat4("_Model", ew::translate(debugQuadTransform.position) * ew::scale(debugQuadTransform.scale));
 			debugQuadMesh.draw();
 		}
+
+		//Draw debug quad with shadow mask depth buffer
+		if (gBufferQuadsEnabled)
+		{
+			//Position
+			glActiveTexture(GL_TEXTURE0 + positionBuffer.GetTexture());
+			glBindTexture(GL_TEXTURE_2D, positionBuffer.GetTexture());
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+
+			blitShader->use();
+			blitShader->setInt("_ColorTex", positionBuffer.GetTexture());
+			blitShader->setMat4("_Model", ew::translate(positionQuadTransform.position) * ew::scale(positionQuadTransform.scale));
+
+			positionQuadMesh.draw();
+
+			//Normal
+			glActiveTexture(GL_TEXTURE0 + normalBuffer.GetTexture());
+			glBindTexture(GL_TEXTURE_2D, normalBuffer.GetTexture());
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+
+			blitShader->use();
+			blitShader->setInt("_ColorTex", normalBuffer.GetTexture());
+			blitShader->setMat4("_Model", ew::translate(normalQuadTransform.position)* ew::scale(normalQuadTransform.scale));
+
+			normalQuadMesh.draw();
+			
+			//Albedo
+			glActiveTexture(GL_TEXTURE0 + albedoSpecularBuffer.GetTexture());
+			glBindTexture(GL_TEXTURE_2D, albedoSpecularBuffer.GetTexture());
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+
+			albedoSpecShader.use();
+			albedoSpecShader.setInt("_ColorTex", albedoSpecularBuffer.GetTexture());
+			albedoSpecShader.setInt("_Albedo", 1);
+			albedoSpecShader.setMat4("_Model", ew::translate(albedoQuadTransform.position) * ew::scale(albedoQuadTransform.scale));
+
+			albedoQuadMesh.draw();
+			
+			//Specular
+			albedoSpecShader.setInt("_Albedo", 0);
+			albedoSpecShader.setMat4("_Model", ew::translate(specularQuadTransform.position) * ew::scale(specularQuadTransform.scale));
+
+			specularQuadMesh.draw();
+		}
 		
 		//Material
 		defaultMat.ExposeImGui();
@@ -534,6 +608,10 @@ int main() {
 		ImGui::Text("GL Falloff Attenuation");
 		ImGui::SliderFloat("Linear", &linearAttenuation, .0014f, 1.f);
 		ImGui::SliderFloat("Quadratic", &quadraticAttenuation, .000007f, 2.0f);
+
+		ImGui::Spacing();
+
+		ImGui::Checkbox("Enable GBuffer Quads", &gBufferQuadsEnabled);
 
 		ImGui::End();
 
