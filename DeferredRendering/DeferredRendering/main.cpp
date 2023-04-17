@@ -422,7 +422,7 @@ int main() {
 
 		if (deferredRenderingEnabled)
 		{
-			//Bind the G Buffer
+			//Geometry pass with G Buffer
 			gBuffer.Bind();
 			gBuffer.Clear(bgColor, 0.0f);
 			GLenum gBuffers[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
@@ -434,6 +434,7 @@ int main() {
 
 			drawScene(&gBufferShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
 
+			//Lighting Pass
 			fbo.Bind();
 			fbo.Clear(bgColor);
 			GLenum buffers[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
@@ -470,11 +471,16 @@ int main() {
 			deferredLitShader.setMat4("_Model", ew::translate(quadTransform.position) * ew::scale(quadTransform.scale));
 			quadMesh.draw();
 
+			glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer.GetId());	//Read data from g buffer
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo.GetId());	//Draw data to lighting buffer
+			//Blit g buffer to default frame buffer
+			glBlitFramebuffer(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+			fbo.Bind(); //bind newly blitted framebuffer
 
-			//unlitShader.use();
+			unlitShader.use();
 
 			//Draw light as a small sphere using unlit shader, ironically.
-			//drawLights(&unlitShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
+			drawLights(&unlitShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
 		}
 		else
 		{
@@ -533,7 +539,6 @@ int main() {
 
 		glEnable(GL_CULL_FACE);
 		glPolygonMode(GL_FRONT_AND_BACK, wireFrame ? GL_LINE : GL_FILL);
-
 
 		//Post Processing
 		//After drawing, bind to default framebuffer, clear it, and draw the fullscreen quad with the shader
