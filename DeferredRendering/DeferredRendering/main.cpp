@@ -105,6 +105,7 @@ bool phong = true;
 bool wireFrame = false;
 
 bool gBufferQuadsEnabled = true;
+bool deferredRenderingEnabled = true;
 
 bool debugQuadEnabled = false;
 
@@ -276,14 +277,14 @@ int main() {
 	debugQuadTransform.position = glm::vec3(.5f, 0.5f, 0.0f);
 	debugQuadTransform.scale = glm::vec3(.3f, .3f * (SCREEN_WIDTH / (float)SCREEN_HEIGHT), 1);
 
-	positionQuadTransform.position = glm::vec3(.5f, 0.5f, 0.0f);
-	positionQuadTransform.scale = glm::vec3(.2f, .2f * (SCREEN_WIDTH / (float)SCREEN_HEIGHT), 1);
-	normalQuadTransform.position = glm::vec3(.3f, 0.3f, 0.0f);
-	normalQuadTransform.scale = glm::vec3(.2f, .2f * (SCREEN_WIDTH / (float)SCREEN_HEIGHT), 1);
-	albedoQuadTransform.position = glm::vec3(.3f, 0.5f, 0.0f);
-	albedoQuadTransform.scale = glm::vec3(.2f, .2f * (SCREEN_WIDTH / (float)SCREEN_HEIGHT), 1);
-	specularQuadTransform.position = glm::vec3(.5f, 0.3f, 0.0f);
-	specularQuadTransform.scale = glm::vec3(.2f, .2f * (SCREEN_WIDTH / (float)SCREEN_HEIGHT), 1);
+	positionQuadTransform.position = glm::vec3(.6f, 0.6f, 0.0f);
+	positionQuadTransform.scale = glm::vec3(.2f, .2f, 1);
+	normalQuadTransform.position = glm::vec3(.4f, 0.4f, 0.0f);
+	normalQuadTransform.scale = glm::vec3(.2f, .2f, 1);
+	albedoQuadTransform.position = glm::vec3(.4f, 0.6f, 0.0f);
+	albedoQuadTransform.scale = glm::vec3(.2f, .2f, 1);
+	specularQuadTransform.position = glm::vec3(.6f, 0.4f, 0.0f);
+	specularQuadTransform.scale = glm::vec3(.2f, .2f, 1);
 
 	pointLights[0].color = glm::vec3(1, 1, 1);
 	pointLights[1].color = glm::vec3(0, 1, 1);
@@ -433,21 +434,23 @@ int main() {
 		glm::mat4 lightProjection = glm::ortho(-shadowFrustumExtents.x, shadowFrustumExtents.x, -shadowFrustumExtents.y, shadowFrustumExtents.y, shadowDeathNearPlane, shadowFrustumExtents.z * 2.f);
 		//drawScene(&depthShader, lightView, lightProjection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
 
-		//Bind the G Buffer
-		gBuffer.Bind();
-		gBuffer.Clear(bgColor);
-		GLenum gBuffers[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
-		glDrawBuffers(3, gBuffers);
-
 		glm::mat4 view = camera.getViewMatrix();
 		glm::mat4 projection = camera.getProjectionMatrix();
 
-		gBufferShader.use();
+		if (deferredRenderingEnabled)
+		{
+			//Bind the G Buffer
+			gBuffer.Bind();
+			gBuffer.Clear(bgColor, 0.0f);
+			GLenum gBuffers[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
+			glDrawBuffers(3, gBuffers);
 
-		texManager.BindTextures();	//This way outside of this step, all the texture slots can be used
+			gBufferShader.use();
 
-		drawScene(&gBufferShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
+			texManager.BindTextures();	//This way outside of this step, all the texture slots can be used
 
+			drawScene(&gBufferShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
+		}
 
 		//Bind and clear main frame buffer
 		fbo.Bind();
@@ -517,6 +520,7 @@ int main() {
 		glClearColor(bgColor.r, bgColor.g, bgColor.b, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		//Draw fullscreen quads with the current shader selected in fbo
+		blitShader->setMat4("_Model", ew::translate(quadTransform.position) * ew::scale(quadTransform.scale));
 		fbo.SetupShader();
 		quadMesh.draw();
 
@@ -542,7 +546,7 @@ int main() {
 		}
 
 		//Draw debug quad with shadow mask depth buffer
-		if (gBufferQuadsEnabled)
+		if (gBufferQuadsEnabled && deferredRenderingEnabled)
 		{
 			//Position
 			glActiveTexture(GL_TEXTURE0 + positionBuffer.GetTexture());
@@ -568,7 +572,7 @@ int main() {
 
 			blitShader->use();
 			blitShader->setInt("_ColorTex", normalBuffer.GetTexture());
-			blitShader->setMat4("_Model", ew::translate(normalQuadTransform.position)* ew::scale(normalQuadTransform.scale));
+			blitShader->setMat4("_Model", ew::translate(normalQuadTransform.position) * ew::scale(normalQuadTransform.scale));
 
 			normalQuadMesh.draw();
 			
@@ -581,14 +585,15 @@ int main() {
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 
 			albedoSpecShader.use();
+			albedoSpecShader.setVec2("_Offset", glm::vec2(0, 0));
 			albedoSpecShader.setInt("_ColorTex", albedoSpecularBuffer.GetTexture());
-			albedoSpecShader.setInt("_Albedo", 1);
+			albedoSpecShader.setInt("_Albedo", true);
 			albedoSpecShader.setMat4("_Model", ew::translate(albedoQuadTransform.position) * ew::scale(albedoQuadTransform.scale));
 
 			albedoQuadMesh.draw();
 			
 			//Specular
-			albedoSpecShader.setInt("_Albedo", 0);
+			albedoSpecShader.setInt("_Albedo", false);
 			albedoSpecShader.setMat4("_Model", ew::translate(specularQuadTransform.position) * ew::scale(specularQuadTransform.scale));
 
 			specularQuadMesh.draw();
@@ -612,6 +617,10 @@ int main() {
 		ImGui::Spacing();
 
 		ImGui::Checkbox("Enable GBuffer Quads", &gBufferQuadsEnabled);
+
+		ImGui::Spacing();
+
+		ImGui::Checkbox("Enable Deferred Rendering", &deferredRenderingEnabled);
 
 		ImGui::End();
 

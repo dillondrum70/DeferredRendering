@@ -60,5 +60,13 @@ void main()
     /////
 
     gBufAlbedoSpecular.rgb = texture(_Textures[_CurrentTexture].texSampler, uv).rgb;
-    gBufAlbedoSpecular.a = texture(_Textures[_CurrentTexture].specSampler, uv).r;
+
+    if(_Textures[_CurrentTexture].hasSpecular)
+    {
+        gBufAlbedoSpecular.a = texture(_Textures[_CurrentTexture].specSampler, uv).r;
+    }
+    else
+    {
+        gBufAlbedoSpecular.a = 0;
+    }
 }

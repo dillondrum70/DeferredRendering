@@ -40,7 +40,7 @@ public:
 	void AddDepthAttachment(RenderBuffer& buffer);
 	void Bind();
 	void Unbind(glm::vec2 viewportDimensions);
-	void Clear(glm::vec3 clearColor);
+	void Clear(glm::vec3 clearColor, float alpha = 1.0f);
 	void Destroy();
 
 	void ExposeImGui();

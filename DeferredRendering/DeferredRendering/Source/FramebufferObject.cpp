@@ -90,11 +90,11 @@ void FramebufferObject::Unbind(glm::vec2 viewportDimensions)
 }
 
 
-void FramebufferObject::Clear(glm::vec3 clearColor)
+void FramebufferObject::Clear(glm::vec3 clearColor, float alpha)
 {
 	Bind();
 
-	glClearColor(clearColor.r, clearColor.g, clearColor.b, 1.0f);
+	glClearColor(clearColor.r, clearColor.g, clearColor.b, alpha);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
