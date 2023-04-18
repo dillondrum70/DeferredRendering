@@ -214,5 +214,7 @@
     <None Include="shaders\albedoSpecBlit.frag" />
     <None Include="shaders\deferredLit.frag" />
     <None Include="shaders\deferredLit.vert" />
+    <None Include="shaders\pointLightVolume.frag" />
+    <None Include="shaders\lightVolume.vert" />
   </ItemGroup>
 </Project>

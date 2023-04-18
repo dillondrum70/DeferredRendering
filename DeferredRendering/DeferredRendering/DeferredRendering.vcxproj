@@ -209,6 +209,8 @@
     <None Include="shaders\gbuffer.frag" />
     <None Include="shaders\grayscale.frag" />
     <None Include="shaders\invert.frag" />
+    <None Include="shaders\pointLightVolume.frag" />
+    <None Include="shaders\lightVolume.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

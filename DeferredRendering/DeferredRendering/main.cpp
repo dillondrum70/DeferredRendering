@@ -34,6 +34,7 @@
 #include "FramebufferObject.h"
 
 void passLightInfo(Shader* shader, glm::mat4 view, glm::mat4 projection);
+void passLightVolumeInfo(Shader* shader, glm::mat4 view, glm::mat4 projection, PointLight light);
 void passTextureInfo(Shader* shader);
 
 void drawScene(Shader* shader, glm::mat4 view, glm::mat4 projection, 
@@ -103,12 +104,14 @@ float quadraticAttenuation = .44f;
 
 bool manuallyMoveLights = false;	//If true, allows you to move point lights manually
 
-bool phong = true;
+bool phong = false;
 
 bool wireFrame = false;
 
 bool gBufferQuadsEnabled = true;
 bool deferredRenderingEnabled = true;
+bool lightVolumesEnabled = true;
+bool renderLightVolumeWireframe = false;
 
 bool debugQuadEnabled = false;
 
@@ -196,6 +199,7 @@ int main() {
 	Shader albedoSpecShader("shaders/blit.vert", "shaders/albedoSpecBlit.frag");
 
 	Shader deferredLitShader("shaders/blit.vert", "shaders/deferredLit.frag");
+	Shader pointLightVolumeShader("shaders/lightVolume.vert", "shaders/pointLightVolume.frag");
 
 	ew::MeshData cubeMeshData;
 	ew::createCube(1.0f, 1.0f, 1.0f, cubeMeshData);
@@ -422,6 +426,8 @@ int main() {
 
 		if (deferredRenderingEnabled)
 		{
+			glDisable(GL_BLEND);
+
 			//Geometry pass with G Buffer
 			gBuffer.Bind();
 			gBuffer.Clear(bgColor, 0.0f);
@@ -434,48 +440,140 @@ int main() {
 
 			drawScene(&gBufferShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
 
+			glEnable(GL_BLEND);
+			glBlendEquation(GL_FUNC_ADD);
+			glBlendFunc(GL_ONE, GL_ONE);
+
 			//Lighting Pass
 			fbo.Bind();
 			fbo.Clear(bgColor);
 			GLenum buffers[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
 			glDrawBuffers(2, buffers);
 
-			deferredLitShader.use();
+			//TODO - Convert deferredLit.frag to take one light at a time
+			
 
-			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, positionBuffer.GetTexture());
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-			deferredLitShader.setInt("_GBuffer.position", 0);
+			if (lightVolumesEnabled)
+			{
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, positionBuffer.GetTexture());
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+				pointLightVolumeShader.setInt("_GBuffer.position", 0);
 
-			glActiveTexture(GL_TEXTURE1);
-			glBindTexture(GL_TEXTURE_2D, normalBuffer.GetTexture());
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-			deferredLitShader.setInt("_GBuffer.normal", 1);
+				glActiveTexture(GL_TEXTURE1);
+				glBindTexture(GL_TEXTURE_2D, normalBuffer.GetTexture());
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+				pointLightVolumeShader.setInt("_GBuffer.normal", 1);
 
-			glActiveTexture(GL_TEXTURE2);
-			glBindTexture(GL_TEXTURE_2D, albedoSpecularBuffer.GetTexture());
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-			deferredLitShader.setInt("_GBuffer.albedoSpecular", 2);
+				glActiveTexture(GL_TEXTURE2);
+				glBindTexture(GL_TEXTURE_2D, albedoSpecularBuffer.GetTexture());
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+				pointLightVolumeShader.setInt("_GBuffer.albedoSpecular", 2);
 
-			passLightInfo(&deferredLitShader, view, projection);
+				Shader* useShader = nullptr;
 
-			deferredLitShader.setMat4("_Model", ew::translate(quadTransform.position) * ew::scale(quadTransform.scale));
-			quadMesh.draw();
+				if (renderLightVolumeWireframe)
+				{
+					glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+					unlitShader.use();
+
+					useShader = &unlitShader;
+				}
+				else
+				{
+					glPolygonMode(GL_FRONT_AND_BACK, wireFrame ? GL_LINE : GL_FILL);
+
+					pointLightVolumeShader.use();
+
+					useShader = &pointLightVolumeShader;
+				}
+
+				for (const PointLight& pointLight : pointLights)
+				{
+					//Get strongest component of the light
+					float maxIlluminance = std::max(pointLight.color.r, std::max(pointLight.color.g, pointLight.color.b));
+
+					//Find radius using quadratic equation
+					float radius = (-linearAttenuation + std::sqrtf(linearAttenuation * linearAttenuation - 4 * quadraticAttenuation * (constantAttenuation - (256.0 / 5.0) * maxIlluminance)))
+						/ (2 * quadraticAttenuation);
+
+					//Create transform for the light to scale it by radius and move it to it's position
+					ew::Transform pointLightTransform;
+					pointLightTransform.position = pointLight.pos;
+					pointLightTransform.scale = glm::vec3(radius);
+
+					useShader->setMat4("_Projection", projection);
+					useShader->setMat4("_View", view);
+					useShader->setMat4("_Model", pointLightTransform.getModelMatrix());
+
+					useShader->setVec3("_Color", glm::vec3(1));
+
+					if (!renderLightVolumeWireframe)
+					{
+						passLightVolumeInfo(&pointLightVolumeShader, view, projection, pointLight);
+					}
+
+					//TODO - Create calculation for attenuation to get sphere scale
+					//TODO - Draw a sphere (using additive blending) for each point light
+					//TODO - Add option to render spheres as wireframes
+
+					sphereMesh.draw();
+				}
+
+				glPolygonMode(GL_FRONT_AND_BACK, wireFrame ? GL_LINE : GL_FILL);
+			}
+			else
+			{
+				deferredLitShader.use();
+
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, positionBuffer.GetTexture());
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+				deferredLitShader.setInt("_GBuffer.position", 0);
+
+				glActiveTexture(GL_TEXTURE1);
+				glBindTexture(GL_TEXTURE_2D, normalBuffer.GetTexture());
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+				deferredLitShader.setInt("_GBuffer.normal", 1);
+
+				glActiveTexture(GL_TEXTURE2);
+				glBindTexture(GL_TEXTURE_2D, albedoSpecularBuffer.GetTexture());
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+				deferredLitShader.setInt("_GBuffer.albedoSpecular", 2);
+
+				passLightInfo(&deferredLitShader, view, projection);
+
+				deferredLitShader.setMat4("_Model", ew::translate(quadTransform.position)* ew::scale(quadTransform.scale));
+				quadMesh.draw();
+			}
+			
 
 			glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer.GetId());	//Read data from g buffer
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo.GetId());	//Draw data to lighting buffer
 			//Blit g buffer to default frame buffer
 			glBlitFramebuffer(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 			fbo.Bind(); //bind newly blitted framebuffer
+
+			glDisable(GL_BLEND);
 
 			unlitShader.use();
 
@@ -484,6 +582,8 @@ int main() {
 		}
 		else
 		{
+			glDisable(GL_BLEND);
+
 			//Shadows + Forward Rendering
 			//Bind and clear main frame buffer
 			fbo.Bind();
@@ -495,6 +595,9 @@ int main() {
 			{
 				glCullFace(GL_BACK);
 			}
+
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 			//Setup shadows in lit
 			litShader.use();
@@ -514,6 +617,8 @@ int main() {
 			litShader.setInt("_ShadowMap", 3);
 			litShader.setMat4("_LightViewProj", lightProjection * lightView);
 			drawScene(&litShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
+
+			glDisable(GL_BLEND);
 
 			//Draw wireframe cube of shadow frustum
 			
@@ -626,6 +731,48 @@ int main() {
 
 			specularQuadMesh.draw();
 		}
+
+		//Update light positions
+
+		if (!manuallyMoveLights)
+		{
+			//Point Lights
+			for (int i = 0; i < pointLightCount; i++)
+			{
+				pointLights[i].pos.x = pointLightRadius * (cos(2 * glm::pi<float>() * (i / (float)pointLightCount)));
+				pointLights[i].pos.y = pointLightHeight;
+				pointLights[i].pos.z = pointLightRadius * (sin(2 * glm::pi<float>() * (i / (float)pointLightCount)));
+			}
+
+			//Directional Lights
+			for (int i = 0; i < directionalLightCount; i++)
+			{
+				float angle = glm::sin(glm::radians(-directionalLightAngle));
+
+				directionalLights[i].dir = -glm::vec3(
+					//Defines the direction this axis is rotated towards			Defines what angle to rotate by
+					(cos(2 * glm::pi<float>() * (i / (float)directionalLightCount))) * angle,
+					1,
+					(sin(2 * glm::pi<float>() * (i / (float)directionalLightCount))) * angle
+				);
+			}
+
+			//Spotlights
+			for (int i = 0; i < spotlightCount; i++)
+			{
+				spotlights[i].pos.x = spotlightRadius * (cos(2 * glm::pi<float>() * (i / (float)spotlightCount)));
+				spotlights[i].pos.y = spotlightHeight;
+				spotlights[i].pos.z = spotlightRadius * (sin(2 * glm::pi<float>() * (i / (float)spotlightCount)));
+
+				spotlights[i].dir = glm::vec3(
+					//Defines the direction this axis is rotated towards			Defines what angle to rotate by
+					(cos(2 * glm::pi<float>() * (i / (float)spotlightCount))) * glm::sin(glm::radians(-spotlightAngle)),
+					-1,
+					(sin(2 * glm::pi<float>() * (i / (float)spotlightCount))) * glm::sin(glm::radians(-spotlightAngle))
+				);
+			}
+		}
+		
 		
 		//Material
 		defaultMat.ExposeImGui();
@@ -645,10 +792,9 @@ int main() {
 		ImGui::Spacing();
 
 		ImGui::Checkbox("Enable GBuffer Quads", &gBufferQuadsEnabled);
-
-		ImGui::Spacing();
-
 		ImGui::Checkbox("Enable Deferred Rendering", &deferredRenderingEnabled);
+		ImGui::Checkbox("Enable Light Volumes", &lightVolumesEnabled);
+		ImGui::Checkbox("Render Light Volume Wireframes", &renderLightVolumeWireframe);
 
 		ImGui::End();
 
@@ -819,13 +965,6 @@ void passLightInfo(Shader* shader, glm::mat4 view, glm::mat4 projection)
 
 	for (int i = 0; i < pointLightCount; i++)
 	{
-		if (!manuallyMoveLights)
-		{
-			pointLights[i].pos.x = pointLightRadius * (cos(2 * glm::pi<float>() * (i / (float)pointLightCount)));
-			pointLights[i].pos.y = pointLightHeight;
-			pointLights[i].pos.z = pointLightRadius * (sin(2 * glm::pi<float>() * (i / (float)pointLightCount)));
-		}
-
 		shader->setVec3("_PointLight[" + std::to_string(i) + "].pos", pointLights[i].pos);
 		shader->setVec3("_PointLight[" + std::to_string(i) + "].color", pointLights[i].color);
 		shader->setFloat("_PointLight[" + std::to_string(i) + "].intensity", pointLights[i].intensity);
@@ -836,18 +975,6 @@ void passLightInfo(Shader* shader, glm::mat4 view, glm::mat4 projection)
 
 	for (int i = 0; i < directionalLightCount; i++)
 	{
-		if (!manuallyMoveLights)
-		{
-			float angle = glm::sin(glm::radians(-directionalLightAngle));
-
-			directionalLights[i].dir = -glm::vec3(
-				//Defines the direction this axis is rotated towards			Defines what angle to rotate by
-				(cos(2 * glm::pi<float>() * (i / (float)directionalLightCount))) * angle,
-				1,
-				(sin(2 * glm::pi<float>() * (i / (float)directionalLightCount))) * angle
-			);
-		}
-
 		shader->setVec3("_DirectionalLight[" + std::to_string(i) + "].dir", directionalLights[i].dir);
 		shader->setVec3("_DirectionalLight[" + std::to_string(i) + "].color", directionalLights[i].color);
 		shader->setFloat("_DirectionalLight[" + std::to_string(i) + "].intensity", directionalLights[i].intensity);
@@ -858,20 +985,6 @@ void passLightInfo(Shader* shader, glm::mat4 view, glm::mat4 projection)
 
 	for (int i = 0; i < spotlightCount; i++)
 	{
-		if (!manuallyMoveLights)
-		{
-			spotlights[i].pos.x = spotlightRadius * (cos(2 * glm::pi<float>() * (i / (float)spotlightCount)));
-			spotlights[i].pos.y = spotlightHeight;
-			spotlights[i].pos.z = spotlightRadius * (sin(2 * glm::pi<float>() * (i / (float)spotlightCount)));
-
-			spotlights[i].dir = glm::vec3(
-				//Defines the direction this axis is rotated towards			Defines what angle to rotate by
-				(cos(2 * glm::pi<float>() * (i / (float)spotlightCount))) * glm::sin(glm::radians(-spotlightAngle)),
-				-1,
-				(sin(2 * glm::pi<float>() * (i / (float)spotlightCount))) * glm::sin(glm::radians(-spotlightAngle))
-			);
-		}
-
 		shader->setVec3("_Spotlight[" + std::to_string(i) + "].pos", spotlights[i].pos);
 		shader->setVec3("_Spotlight[" + std::to_string(i) + "].dir", spotlights[i].dir);
 		shader->setVec3("_Spotlight[" + std::to_string(i) + "].color", spotlights[i].color);
@@ -881,6 +994,89 @@ void passLightInfo(Shader* shader, glm::mat4 view, glm::mat4 projection)
 		shader->setFloat("_Spotlight[" + std::to_string(i) + "].maxAngle", glm::cos(glm::radians(spotlights[i].outerAngle)));
 		shader->setFloat("_Spotlight[" + std::to_string(i) + "].falloff", spotlights[i].angleFalloff);
 	}
+}
+
+void passLightVolumeInfo(Shader* shader, glm::mat4 view, glm::mat4 projection, PointLight light)
+{
+	shader->use();
+	shader->setVec3("_BrightColor", brightColor);	//Used in bloom
+	shader->setFloat("_BrightnessThreshold", brightnessThreshold);	//Used in bloom
+	shader->setMat4("_Projection", projection);
+	shader->setMat4("_View", view);
+	shader->setFloat("_MinBias", minBias);
+	shader->setFloat("_MaxBias", maxBias);
+	shader->setInt("_EnablePCF", enablePCF);
+	shader->setInt("_PCFSamples", pcfSamples);
+
+	//Attenuation Uniforms
+	shader->setFloat("_Attenuation.constant", constantAttenuation);
+	shader->setFloat("_Attenuation.linear", linearAttenuation);
+	shader->setFloat("_Attenuation.quadratic", quadraticAttenuation);
+
+	//Material Uniforms
+	shader->setVec3("_Mat.color", defaultMat.color);
+	shader->setFloat("_Mat.ambientCoefficient", defaultMat.ambientK);
+	shader->setFloat("_Mat.diffuseCoefficient", defaultMat.diffuseK);
+	shader->setFloat("_Mat.specularCoefficient", defaultMat.specularK);
+	shader->setFloat("_Mat.shininess", defaultMat.shininess);
+	shader->setFloat("_Mat.normalIntensity", defaultMat.normalIntensity);
+
+	shader->setInt("_Phong", phong);
+
+	shader->setVec3("_PointLight.pos", light.pos);
+	shader->setVec3("_PointLight.color", light.color);
+	shader->setFloat("_PointLight.intensity", light.intensity);
+
+	////Directional Light Uniforms
+	//shader->setInt("_UsedDirectionalLights", directionalLightCount);
+
+	//for (int i = 0; i < directionalLightCount; i++)
+	//{
+	//	if (!manuallyMoveLights)
+	//	{
+	//		float angle = glm::sin(glm::radians(-directionalLightAngle));
+
+	//		directionalLights[i].dir = -glm::vec3(
+	//			//Defines the direction this axis is rotated towards			Defines what angle to rotate by
+	//			(cos(2 * glm::pi<float>() * (i / (float)directionalLightCount))) * angle,
+	//			1,
+	//			(sin(2 * glm::pi<float>() * (i / (float)directionalLightCount))) * angle
+	//		);
+	//	}
+
+	//	shader->setVec3("_DirectionalLight[" + std::to_string(i) + "].dir", directionalLights[i].dir);
+	//	shader->setVec3("_DirectionalLight[" + std::to_string(i) + "].color", directionalLights[i].color);
+	//	shader->setFloat("_DirectionalLight[" + std::to_string(i) + "].intensity", directionalLights[i].intensity);
+	//}
+
+	////Spotlight Uniforms
+	//shader->setInt("_UsedSpotlights", spotlightCount);
+
+	//for (int i = 0; i < spotlightCount; i++)
+	//{
+	//	if (!manuallyMoveLights)
+	//	{
+	//		spotlights[i].pos.x = spotlightRadius * (cos(2 * glm::pi<float>() * (i / (float)spotlightCount)));
+	//		spotlights[i].pos.y = spotlightHeight;
+	//		spotlights[i].pos.z = spotlightRadius * (sin(2 * glm::pi<float>() * (i / (float)spotlightCount)));
+
+	//		spotlights[i].dir = glm::vec3(
+	//			//Defines the direction this axis is rotated towards			Defines what angle to rotate by
+	//			(cos(2 * glm::pi<float>() * (i / (float)spotlightCount))) * glm::sin(glm::radians(-spotlightAngle)),
+	//			-1,
+	//			(sin(2 * glm::pi<float>() * (i / (float)spotlightCount))) * glm::sin(glm::radians(-spotlightAngle))
+	//		);
+	//	}
+
+	//	shader->setVec3("_Spotlight[" + std::to_string(i) + "].pos", spotlights[i].pos);
+	//	shader->setVec3("_Spotlight[" + std::to_string(i) + "].dir", spotlights[i].dir);
+	//	shader->setVec3("_Spotlight[" + std::to_string(i) + "].color", spotlights[i].color);
+	//	shader->setFloat("_Spotlight[" + std::to_string(i) + "].intensity", spotlights[i].intensity);
+	//	shader->setFloat("_Spotlight[" + std::to_string(i) + "].range", spotlights[i].range);
+	//	shader->setFloat("_Spotlight[" + std::to_string(i) + "].minAngle", glm::cos(glm::radians(spotlights[i].innerAngle)));
+	//	shader->setFloat("_Spotlight[" + std::to_string(i) + "].maxAngle", glm::cos(glm::radians(spotlights[i].outerAngle)));
+	//	shader->setFloat("_Spotlight[" + std::to_string(i) + "].falloff", spotlights[i].angleFalloff);
+	//}
 }
 
 void passTextureInfo(Shader* shader)
