@@ -831,72 +831,87 @@ int main() {
 
 		//Point Lights
 		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);	//Size to fit content
-		ImGui::Begin("Point Lights");
-
-		ImGui::SliderInt("Light Count", &pointLightCount, 0, MAX_POINT_LIGHTS);
-
-		if (!manuallyMoveLights)
+		if (ImGui::Begin("Light Options"))
 		{
-			ImGui::SliderFloat("Light Array Radius", &pointLightRadius, 0.f, 100.f);
-			ImGui::SliderFloat("Light Array Height", &pointLightHeight, -5.f, 30.f);
-		}
+			if (ImGui::BeginTabBar("Light Tabs"))
+			{
+				if (ImGui::BeginTabItem("Point Lights"))
+				{
+					ImGui::SliderInt("Light Count", &pointLightCount, 0, MAX_POINT_LIGHTS);
 
-		for (size_t i = 0; i < pointLightCount; i++)
-		{
-			ImGui::Text(("Point Light" + std::to_string(i)).c_str());
+					if (!manuallyMoveLights)
+					{
+						ImGui::SliderFloat("Light Array Radius", &pointLightRadius, 0.f, 100.f);
+						ImGui::SliderFloat("Light Array Height", &pointLightHeight, -5.f, 30.f);
+					}
 
-			ImGui::PushID(i);
-			pointLights[i].ExposeImGui(manuallyMoveLights);
-			ImGui::PopID();
+					for (size_t i = 0; i < pointLightCount; i++)
+					{
+						ImGui::Text(("Point Light" + std::to_string(i)).c_str());
+
+						ImGui::PushID(i);
+						pointLights[i].ExposeImGui(manuallyMoveLights);
+						ImGui::PopID();
+					}
+
+					ImGui::EndTabItem();
+				}
+
+				//Directional Light
+				//ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);	//Size to fit content
+				if (ImGui::BeginTabItem("Directional Light"))
+				{
+					ImGui::SliderInt("Light Count", &directionalLightCount, 0, MAX_DIRECTIONAL_LIGHTS);
+
+					if (!manuallyMoveLights)
+					{
+						ImGui::SliderFloat("Light Array Angle", &directionalLightAngle, 90.f, 270.f);
+					}
+
+					for (size_t i = 0; i < directionalLightCount; i++)
+					{
+						ImGui::Text(("Directional Light " + std::to_string(i)).c_str());
+
+						ImGui::PushID(i);
+						directionalLights[i].ExposeImGui(manuallyMoveLights);
+						ImGui::PopID();
+					}
+
+					ImGui::EndTabItem();
+				}
+
+				//Spotlight
+				//ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);	//Size to fit content
+				if (ImGui::BeginTabItem("Spotlight"))
+				{
+					ImGui::SliderInt("Light Count", &spotlightCount, 0, MAX_SPOTLIGHTS);
+
+					if (!manuallyMoveLights)
+					{
+						ImGui::SliderFloat("Light Array Radius", &spotlightRadius, 0.f, 100.f);
+						ImGui::SliderFloat("Light Array Height", &spotlightHeight, -5.f, 30.f);
+						ImGui::SliderFloat("Light Array Angle", &spotlightAngle, -60.f, 60.f);
+					}
+
+					for (size_t i = 0; i < spotlightCount; i++)
+					{
+						ImGui::Text(("Spotlight " + std::to_string(i)).c_str());
+
+						ImGui::PushID(i);
+						spotlights[i].ExposeImGui(manuallyMoveLights);
+						ImGui::PopID();
+					}
+
+					ImGui::EndTabItem();
+				}
+				
+				ImGui::EndTabBar();
+			}
 		}
 
 		ImGui::End();
 
-		//Directional Light
-		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);	//Size to fit content
-		ImGui::Begin("Directional Light");
-
-		ImGui::SliderInt("Light Count", &directionalLightCount, 0, MAX_DIRECTIONAL_LIGHTS);
-
-		if (!manuallyMoveLights)
-		{
-			ImGui::SliderFloat("Light Array Angle", &directionalLightAngle, 90.f, 270.f);
-		}
 		
-		for (size_t i = 0; i < directionalLightCount; i++)
-		{
-			ImGui::Text(("Directional Light " + std::to_string(i)).c_str());
-
-			ImGui::PushID(i);
-			directionalLights[i].ExposeImGui(manuallyMoveLights);
-			ImGui::PopID();
-		}
-
-		ImGui::End();
-
-		//Spotlight
-		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);	//Size to fit content
-		ImGui::Begin("Spotlight");
-
-		ImGui::SliderInt("Light Count", &spotlightCount, 0, MAX_SPOTLIGHTS);
-
-		if (!manuallyMoveLights)
-		{
-			ImGui::SliderFloat("Light Array Radius", &spotlightRadius, 0.f, 100.f);
-			ImGui::SliderFloat("Light Array Height", &spotlightHeight, -5.f, 30.f);
-			ImGui::SliderFloat("Light Array Angle", &spotlightAngle, -60.f, 60.f);
-		}
-
-		for (size_t i = 0; i < spotlightCount; i++)
-		{
-			ImGui::Text(("Spotlight " + std::to_string(i)).c_str());
-
-			ImGui::PushID(i);
-			spotlights[i].ExposeImGui(manuallyMoveLights);
-			ImGui::PopID();
-		}
-
-		ImGui::End();
 
 		//Texture
 		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);	//Size to fit content
