@@ -498,10 +498,10 @@ int main() {
 					useShader = &pointLightVolumeShader;
 				}
 
-				for (const PointLight& pointLight : pointLights)
+				for (int i = 0; i < pointLightCount; i++)
 				{
 					//Get strongest component of the light
-					float maxIlluminance = std::max(pointLight.color.r, std::max(pointLight.color.g, pointLight.color.b));
+					float maxIlluminance = std::max(pointLights[i].color.r, std::max(pointLights[i].color.g, pointLights[i].color.b));
 
 					//Find radius using quadratic equation
 					float radius = (-linearAttenuation + std::sqrtf(linearAttenuation * linearAttenuation - 4 * quadraticAttenuation * (constantAttenuation - (256.0 / 5.0) * maxIlluminance)))
@@ -509,7 +509,7 @@ int main() {
 
 					//Create transform for the light to scale it by radius and move it to it's position
 					ew::Transform pointLightTransform;
-					pointLightTransform.position = pointLight.pos;
+					pointLightTransform.position = pointLights[i].pos;
 					pointLightTransform.scale = glm::vec3(radius);
 
 					useShader->setMat4("_Projection", projection);
@@ -520,7 +520,7 @@ int main() {
 
 					if (!renderLightVolumeWireframe)
 					{
-						passLightVolumeInfo(&pointLightVolumeShader, view, projection, pointLight);
+						passLightVolumeInfo(&pointLightVolumeShader, view, projection, pointLights[i]);
 					}
 
 					//TODO - Create calculation for attenuation to get sphere scale
