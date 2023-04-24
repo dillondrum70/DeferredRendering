@@ -36,7 +36,8 @@
 void passLightInfo(Shader* shader, glm::mat4 view, glm::mat4 projection);
 void passDeferredLightInfo(Shader* shader);
 void passMaterialInfo(Shader* shader);
-void passLightVolumeInfo(Shader* shader, glm::mat4 view, glm::mat4 projection, PointLight light);
+void passPointLightVolumeInfo(Shader* shader, glm::mat4 view, glm::mat4 projection, PointLight light);
+void passSpotLightVolumeInfo(Shader* shader, glm::mat4 view, glm::mat4 projection, SpotLight light);
 void passTextureInfo(Shader* shader);
 
 void drawScene(Shader* shader, glm::mat4 view, glm::mat4 projection, 
@@ -132,7 +133,7 @@ float brightnessThreshold = .95f;
 TextureManager texManager;
 
 ew::Transform cubeTransform;
-ew::Transform sphereTransform;
+ew::Transform sphereTransforms[50];
 ew::Transform planeTransform;
 ew::Transform cylinderTransform;
 ew::Transform lightTransform;
@@ -256,7 +257,16 @@ int main() {
 
 	//Initialize shape transforms
 	cubeTransform.position = glm::vec3(-2.0f, -.5f, 0.0f);
-	sphereTransform.position = glm::vec3(0.0f, 0.0f, 0.0f);
+
+	for (ew::Transform& sphereTrans : sphereTransforms)
+	{
+		sphereTrans.position = glm::vec3(
+			((static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) * 10) - 5,
+			((static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) * 5),
+			((static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) * 10) - 5);
+		sphereTrans.scale = glm::vec3(((static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) * .6f) + .4f);
+	}
+	
 
 	planeTransform.position = glm::vec3(0.0f, -1.0f, 0.0f);
 	planeTransform.scale = glm::vec3(10.0f);
@@ -544,6 +554,8 @@ int main() {
 					quadMesh.draw();
 				}
 
+				glCullFace(GL_FRONT);
+
 				//Point lighting pass
 				useShader->setInt("_LightType", LightTypes::POINT);
 
@@ -563,10 +575,8 @@ int main() {
 					pointLightTransform.position = pointLights[i].pos;
 					pointLightTransform.scale = glm::vec3(radius);
 
-					glCullFace(GL_FRONT);
-
-					//useShader->setMat4("_Projection", projection);
-					//useShader->setMat4("_View", view);
+					useShader->setMat4("_Projection", projection);
+					useShader->setMat4("_View", view);
 					useShader->setMat4("_Model", pointLightTransform.getModelMatrix());
 
 					useShader->setVec3("_Color", glm::vec3(1));
@@ -575,20 +585,58 @@ int main() {
 
 					if (!renderLightVolumeWireframe)
 					{
-						passLightVolumeInfo(&lightVolumeShader, view, projection, pointLights[i]);
+						passPointLightVolumeInfo(&lightVolumeShader, view, projection, pointLights[i]);
 					}
 
 					sphereMesh.draw();
-
-					glCullFace(GL_BACK);
 				}
 				
+				//Spotlight lighting pass
+				useShader->setInt("_LightType", LightTypes::SPOTLIGHT);
+
+				for (int i = 0; i < spotlightCount; i++)
+				{
+					//Get strongest component of the light
+					float maxIlluminance = std::max(spotlights[i].color.r, std::max(spotlights[i].color.g, spotlights[i].color.b));
+
+					//Find radius using quadratic equation
+					//float radius = (-linearAttenuation + std::sqrtf(linearAttenuation * linearAttenuation - 4 * quadraticAttenuation * (constantAttenuation - (256.0 / 5.0) * maxIlluminance)))
+						/// (2 * quadraticAttenuation);
+					float radius = (-linearAttenuation + std::sqrtf(linearAttenuation * linearAttenuation - 4 * quadraticAttenuation * (constantAttenuation - (256.0) * maxIlluminance)))
+						/ (2 * quadraticAttenuation);
+
+					glm::vec3 right = glm::cross(spotlights[i].dir, glm::vec3(0, 1, 0));
+					glm::vec3 up = glm::cross(right, spotlights[i].dir);
+
+					//Create transform for the light to scale it by radius and move it to it's position
+					ew::Transform spotlightTransform;
+					spotlightTransform.position = spotlights[i].pos + (spotlights[i].dir * radius * .5f);
+					spotlightTransform.rotation = glm::quatLookAt(up, glm::vec3(0, 1, 0));
+					spotlightTransform.scale = glm::vec3(radius, radius, radius);
+
+					useShader->setMat4("_Projection", projection);
+					useShader->setMat4("_View", view);
+					useShader->setMat4("_Model", spotlightTransform.getModelMatrix());
+
+					useShader->setVec3("_Color", glm::vec3(1));
+
+					useShader->setVec2("_ScreenDimensions", glm::vec2(SCREEN_WIDTH, SCREEN_HEIGHT));
+
+					if (!renderLightVolumeWireframe)
+					{
+						passSpotLightVolumeInfo(&lightVolumeShader, view, projection, spotlights[i]);
+					}
+
+					cylinderMesh.draw();
+				}
+
+				glCullFace(GL_BACK);
 
 				glEnable(GL_DEPTH_TEST);
 				
 				glPolygonMode(GL_FRONT_AND_BACK, wireFrame ? GL_LINE : GL_FILL);
 			}
-			else
+			else //Don't use light volumes
 			{
 				deferredLitShader.use();
 
@@ -622,7 +670,6 @@ int main() {
 				quadMesh.draw();
 			}
 			
-
 			glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer.GetId());	//Read data from g buffer
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo.GetId());	//Draw data to lighting buffer
 			//Blit g buffer to default frame buffer
@@ -633,8 +680,12 @@ int main() {
 
 			unlitShader.use();
 
+			glDepthMask(GL_TRUE);
+
 			//Draw light as a small sphere using unlit shader, ironically.
 			drawLights(&unlitShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
+
+			glDepthMask(GL_FALSE);
 		}
 		else  //Forward Rendering
 		{
@@ -948,7 +999,7 @@ int main() {
 					if (!manuallyMoveLights)
 					{
 						ImGui::SliderFloat("Light Array Radius", &spotlightRadius, 0.f, 100.f);
-						ImGui::SliderFloat("Light Array Height", &spotlightHeight, -5.f, 30.f);
+						ImGui::SliderFloat("Light Array Height", &spotlightHeight, -5.f, 300.f);
 						ImGui::SliderFloat("Light Array Angle", &spotlightAngle, -60.f, 60.f);
 					}
 
@@ -1098,7 +1149,7 @@ void passDeferredLightInfo(Shader* shader)
 	}
 }
 
-void passLightVolumeInfo(Shader* shader, glm::mat4 view, glm::mat4 projection, PointLight light)
+void passPointLightVolumeInfo(Shader* shader, glm::mat4 view, glm::mat4 projection, PointLight light)
 {
 	shader->use();
 	shader->setVec3("_BrightColor", brightColor);	//Used in bloom
@@ -1123,6 +1174,38 @@ void passLightVolumeInfo(Shader* shader, glm::mat4 view, glm::mat4 projection, P
 	shader->setVec3("_PointLight.pos", light.pos);
 	shader->setVec3("_PointLight.color", light.color);
 	shader->setFloat("_PointLight.intensity", light.intensity);
+}
+
+void passSpotLightVolumeInfo(Shader* shader, glm::mat4 view, glm::mat4 projection, SpotLight light)
+{
+	shader->use();
+	shader->setVec3("_BrightColor", brightColor);	//Used in bloom
+	shader->setFloat("_BrightnessThreshold", brightnessThreshold);	//Used in bloom
+	shader->setMat4("_Projection", projection);
+	shader->setMat4("_View", view);
+	shader->setFloat("_MinBias", minBias);
+	shader->setFloat("_MaxBias", maxBias);
+	shader->setInt("_EnablePCF", enablePCF);
+	shader->setInt("_PCFSamples", pcfSamples);
+
+	//Attenuation Uniforms
+	shader->setFloat("_Attenuation.constant", constantAttenuation);
+	shader->setFloat("_Attenuation.linear", linearAttenuation);
+	shader->setFloat("_Attenuation.quadratic", quadraticAttenuation);
+
+	//Material Uniforms
+	passMaterialInfo(shader);
+
+	shader->setInt("_Phong", phong);
+
+	shader->setVec3("_Spotlight.pos", light.pos);
+	shader->setVec3("_Spotlight.dir", light.dir);
+	shader->setVec3("_Spotlight.color", light.color);
+	shader->setFloat("_Spotlight.intensity", light.intensity);
+	shader->setFloat("_Spotlight.range", light.range);
+	shader->setFloat("_Spotlight.minAngle", glm::cos(glm::radians(light.innerAngle)));
+	shader->setFloat("_Spotlight.maxAngle", glm::cos(glm::radians(light.outerAngle)));
+	shader->setFloat("_Spotlight.falloff", light.angleFalloff);
 
 	////Directional Light Uniforms
 	//shader->setInt("_UsedDirectionalLights", directionalLightCount);
@@ -1237,11 +1320,14 @@ void drawScene(Shader* shader, glm::mat4 view, glm::mat4 projection, ew::Mesh& c
 	shader->setMat4("_NormalMatrix", glm::transpose(glm::inverse(cubeModel)));
 	cubeMesh.draw();
 
-	////Draw sphere
-	glm::mat4 sphereModel = sphereTransform.getModelMatrix();
-	shader->setMat4("_Model", sphereModel);
-	shader->setMat4("_NormalMatrix", glm::transpose(glm::inverse(sphereModel)));
-	sphereMesh.draw();
+	////Draw spheres
+	for (ew::Transform sphereTrans : sphereTransforms)
+	{
+		glm::mat4 sphereModel = sphereTrans.getModelMatrix();
+		shader->setMat4("_Model", sphereModel);
+		shader->setMat4("_NormalMatrix", glm::transpose(glm::inverse(sphereModel)));
+		sphereMesh.draw();
+	}
 
 	//Draw cylinder
 	glm::mat4 cylinderModel = cylinderTransform.getModelMatrix();

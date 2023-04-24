@@ -55,9 +55,7 @@ struct Spotlight
     float falloff;
 };
 
-const int MAX_SPOTLIGHTS = 8;
-uniform Spotlight _Spotlight[MAX_SPOTLIGHTS];
-uniform int _UsedSpotlights;
+uniform Spotlight _Spotlight;
 
 struct Material
 {
@@ -179,37 +177,34 @@ void directionalLight(inout vec3 diffuse, inout vec3 specular, vec3 position, ve
 
 void calculateSpotlight(inout vec3 diffuse, inout vec3 specular, vec3 position, vec3 normal)
 {
-    for(int i = 0; i < _UsedSpotlights; i++)
+    vec3 intensityRGB = _Spotlight.intensity * _Spotlight.color * _Mat.color;   //Material color and light intensity/color
+    float dist = distance(position, _Spotlight.pos);    //distance between candidate point and light
+    vec3 lightDir = normalize(_Spotlight.pos - position);  //Direction to light
+    float attenuationFactor = calculateAttenuationFactor(dist, _Attenuation.constant, _Attenuation.linear, _Attenuation.quadratic);   //Factor of how much light makes it based on distance
+
+    vec3 fragDir = normalize(position - _Spotlight.pos);
+    float fragAngle = dot(normalize(_Spotlight.dir), fragDir);
+    float angularAttentuation = pow(max(min(((fragAngle - _Spotlight.maxAngle) / (_Spotlight.minAngle - _Spotlight.maxAngle)), 1), 0), _Spotlight.falloff) * _Spotlight.range;
+
+    //Diffuse Light
+    diffuse += calculateDiffuse(_Mat.diffuseCoefficient, lightDir, normal, intensityRGB)
+    * attenuationFactor * angularAttentuation; 
+
+    //Specular Light
+    float angle = 0;    //What dot product to put in for specular (depending on if phong or blinn-phong it changes)
+    vec3 eyeDir = normalize(_CamPos - position);   //Direction to viewer
+
+    if(_Phong)    //Phong
     {
-        vec3 intensityRGB = _Spotlight[i].intensity * _Spotlight[i].color * _Mat.color;   //Material color and light intensity/color
-        float dist = distance(position, _Spotlight[i].pos);    //distance between candidate point and light
-        vec3 lightDir = normalize(_Spotlight[i].pos - position);  //Direction to light
-        float attenuationFactor = calculateAttenuationFactor(dist, _Attenuation.constant, _Attenuation.linear, _Attenuation.quadratic);   //Factor of how much light makes it based on distance
-
-        vec3 fragDir = normalize(position - _Spotlight[i].pos);
-        float fragAngle = dot(normalize(_Spotlight[i].dir), fragDir);
-        float angularAttentuation = pow(max(min(((fragAngle - _Spotlight[i].maxAngle) / (_Spotlight[i].minAngle - _Spotlight[i].maxAngle)), 1), 0), _Spotlight[i].falloff) * _Spotlight[i].range;
-
-        //Diffuse Light
-        diffuse += calculateDiffuse(_Mat.diffuseCoefficient, lightDir, normal, intensityRGB)
-        * attenuationFactor * angularAttentuation; 
-
-        //Specular Light
-        float angle = 0;    //What dot product to put in for specular (depending on if phong or blinn-phong it changes)
-        vec3 eyeDir = normalize(_CamPos - position);   //Direction to viewer
-
-        if(_Phong)    //Phong
-        {
-            angle = calculatePhong(eyeDir, -lightDir, normal);
-        }
-        else    //Blinn-Phong
-        {
-            angle = calculateBlinnPhong(eyeDir, lightDir, normal);
-        }
-    
-        specular += calculateSpecular(_Mat.specularCoefficient, angle, _Mat.shininess, intensityRGB)
-        * attenuationFactor * angularAttentuation;
+        angle = calculatePhong(eyeDir, -lightDir, normal);
     }
+    else    //Blinn-Phong
+    {
+        angle = calculateBlinnPhong(eyeDir, lightDir, normal);
+    }
+    
+    specular += calculateSpecular(_Mat.specularCoefficient, angle, _Mat.shininess, intensityRGB)
+    * attenuationFactor * angularAttentuation;
 }
 
 float calcShadow(sampler2D shadowMap, vec4 lightSpacePoint, float bias)
@@ -284,7 +279,7 @@ void main()
             diffuse *=  albedo;
             break;
         case 3: //Spotlight
-            //calculateSpotlight(diffuse, specular, position, normal);
+            calculateSpotlight(diffuse, specular, position, normal);
             diffuse *=  albedo;
             break;
     }
