@@ -428,6 +428,9 @@ int main() {
 		{
 			glDisable(GL_BLEND);
 
+			glDepthMask(GL_TRUE);
+			glEnable(GL_DEPTH_TEST);
+
 			//Geometry pass with G Buffer
 			gBuffer.Bind();
 			gBuffer.Clear(bgColor, 0.0f);
@@ -440,8 +443,11 @@ int main() {
 
 			drawScene(&gBufferShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
 
+			glDepthMask(GL_FALSE);
+			glDisable(GL_DEPTH_TEST);
+
 			glEnable(GL_BLEND);
-			glBlendEquation(GL_FUNC_ADD);
+			glBlendEquation(GL_FUNC_ADD);	//Additive blending
 			glBlendFunc(GL_ONE, GL_ONE);
 
 			//Lighting Pass
@@ -504,7 +510,9 @@ int main() {
 					float maxIlluminance = std::max(pointLights[i].color.r, std::max(pointLights[i].color.g, pointLights[i].color.b));
 
 					//Find radius using quadratic equation
-					float radius = (-linearAttenuation + std::sqrtf(linearAttenuation * linearAttenuation - 4 * quadraticAttenuation * (constantAttenuation - (256.0 / 5.0) * maxIlluminance)))
+					//float radius = (-linearAttenuation + std::sqrtf(linearAttenuation * linearAttenuation - 4 * quadraticAttenuation * (constantAttenuation - (256.0 / 5.0) * maxIlluminance)))
+						/// (2 * quadraticAttenuation);
+					float radius = (-linearAttenuation + std::sqrtf(linearAttenuation * linearAttenuation - 4 * quadraticAttenuation * (constantAttenuation - (256.0) * maxIlluminance)))
 						/ (2 * quadraticAttenuation);
 
 					//Create transform for the light to scale it by radius and move it to it's position
@@ -518,14 +526,12 @@ int main() {
 
 					useShader->setVec3("_Color", glm::vec3(1));
 
+					useShader->setVec2("_ScreenDimensions", glm::vec2(SCREEN_WIDTH, SCREEN_HEIGHT));
+
 					if (!renderLightVolumeWireframe)
 					{
 						passLightVolumeInfo(&pointLightVolumeShader, view, projection, pointLights[i]);
 					}
-
-					//TODO - Create calculation for attenuation to get sphere scale
-					//TODO - Draw a sphere (using additive blending) for each point light
-					//TODO - Add option to render spheres as wireframes
 
 					sphereMesh.draw();
 				}
@@ -786,8 +792,8 @@ int main() {
 		ImGui::Text("Opens option under settings\nin different types of lights\nto change the individual\nposition and/or direction of\nthe lights");
 
 		ImGui::Text("GL Falloff Attenuation");
-		ImGui::SliderFloat("Linear", &linearAttenuation, .0014f, 1.f);
-		ImGui::SliderFloat("Quadratic", &quadraticAttenuation, .000007f, 2.0f);
+		ImGui::SliderFloat("Linear", &linearAttenuation, .001f, 1.f);
+		ImGui::SliderFloat("Quadratic", &quadraticAttenuation, .001f, 2.0f);
 
 		ImGui::Spacing();
 

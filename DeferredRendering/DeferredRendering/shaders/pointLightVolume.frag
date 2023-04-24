@@ -2,10 +2,12 @@
 layout (location = 0) out vec4 FragColor;
 layout (location = 1) out vec4 BrightColor;
 
-in vec2 TexCoord;
+//in vec2 TexCoord;
 
 uniform vec3 _BrightColor;
 uniform float _BrightnessThreshold;
+
+uniform vec2 _ScreenDimensions;
 
 //Uniforms from application
 
@@ -255,10 +257,12 @@ float calcPCF(sampler2D shadowMap, vec4 lightSpacePoint, float bias, int samples
 
 void main()
 {   
-    vec3 position = texture(_GBuffer.position, TexCoord).rgb;
-    vec3 normal = texture(_GBuffer.normal, TexCoord).rgb;
-    vec3 albedo = texture(_GBuffer.albedoSpecular, TexCoord).rgb;
-    float specFloat = texture(_GBuffer.albedoSpecular, TexCoord).a;
+    vec2 texCoord = gl_FragCoord.xy / _ScreenDimensions;
+
+    vec3 position = texture(_GBuffer.position, texCoord).rgb;
+    vec3 normal = texture(_GBuffer.normal, texCoord).rgb;
+    vec3 albedo = texture(_GBuffer.albedoSpecular, texCoord).rgb;
+    float specFloat = texture(_GBuffer.albedoSpecular, texCoord).a;
 
     //Ambient Light
     vec3 ambient = _Mat.ambientCoefficient * _Mat.color * albedo;
