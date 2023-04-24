@@ -34,6 +34,8 @@
 #include "FramebufferObject.h"
 
 void passLightInfo(Shader* shader, glm::mat4 view, glm::mat4 projection);
+void passDeferredLightInfo(Shader* shader);
+void passMaterialInfo(Shader* shader);
 void passLightVolumeInfo(Shader* shader, glm::mat4 view, glm::mat4 projection, PointLight light);
 void passTextureInfo(Shader* shader);
 
@@ -154,6 +156,13 @@ int pcfSamples = 1;
 
 glm::vec4 borderCol = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 
+enum LightTypes {
+	AMBIENT = 0,
+	POINT,
+	DIRECTIONAL,
+	SPOTLIGHT
+};
+
 int main() {
 	if (!glfwInit()) {
 		printf("glfw failed to init");
@@ -199,7 +208,7 @@ int main() {
 	Shader albedoSpecShader("shaders/blit.vert", "shaders/albedoSpecBlit.frag");
 
 	Shader deferredLitShader("shaders/blit.vert", "shaders/deferredLit.frag");
-	Shader pointLightVolumeShader("shaders/lightVolume.vert", "shaders/pointLightVolume.frag");
+	Shader lightVolumeShader("shaders/lightVolume.vert", "shaders/lightVolume.frag");
 
 	ew::MeshData cubeMeshData;
 	ew::createCube(1.0f, 1.0f, 1.0f, cubeMeshData);
@@ -467,7 +476,7 @@ int main() {
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-				pointLightVolumeShader.setInt("_GBuffer.position", 0);
+				lightVolumeShader.setInt("_GBuffer.position", 0);
 
 				glActiveTexture(GL_TEXTURE1);
 				glBindTexture(GL_TEXTURE_2D, normalBuffer.GetTexture());
@@ -475,7 +484,7 @@ int main() {
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-				pointLightVolumeShader.setInt("_GBuffer.normal", 1);
+				lightVolumeShader.setInt("_GBuffer.normal", 1);
 
 				glActiveTexture(GL_TEXTURE2);
 				glBindTexture(GL_TEXTURE_2D, albedoSpecularBuffer.GetTexture());
@@ -483,7 +492,7 @@ int main() {
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-				pointLightVolumeShader.setInt("_GBuffer.albedoSpecular", 2);
+				lightVolumeShader.setInt("_GBuffer.albedoSpecular", 2);
 
 				Shader* useShader = nullptr;
 
@@ -499,10 +508,44 @@ int main() {
 				{
 					glPolygonMode(GL_FRONT_AND_BACK, wireFrame ? GL_LINE : GL_FILL);
 
-					pointLightVolumeShader.use();
+					lightVolumeShader.use();
 
-					useShader = &pointLightVolumeShader;
+					useShader = &lightVolumeShader;
 				}
+
+				glDisable(GL_DEPTH_TEST);
+
+				//Ambient lighting pass
+				{
+					useShader->setMat4("_Projection", glm::mat4(1));
+					useShader->setMat4("_View", glm::mat4(1));
+					useShader->setMat4("_Model", ew::translate(quadTransform.position) * ew::scale(quadTransform.scale));
+
+					useShader->setVec3("_Color", glm::vec3(1));
+
+					useShader->setVec2("_ScreenDimensions", glm::vec2(SCREEN_WIDTH, SCREEN_HEIGHT));
+
+					useShader->setInt("_LightType", LightTypes::AMBIENT);
+
+					if (!renderLightVolumeWireframe)
+					{
+						passMaterialInfo(useShader);
+					}
+
+					quadMesh.draw();
+				}
+
+				//Directional light pass (lumped into one draw call because nothing changes here from normal)
+				{
+					useShader->setInt("_LightType", LightTypes::DIRECTIONAL);
+
+					passDeferredLightInfo(useShader);
+
+					quadMesh.draw();
+				}
+
+				//Point lighting pass
+				useShader->setInt("_LightType", LightTypes::POINT);
 
 				for (int i = 0; i < pointLightCount; i++)
 				{
@@ -520,8 +563,10 @@ int main() {
 					pointLightTransform.position = pointLights[i].pos;
 					pointLightTransform.scale = glm::vec3(radius);
 
-					useShader->setMat4("_Projection", projection);
-					useShader->setMat4("_View", view);
+					glCullFace(GL_FRONT);
+
+					//useShader->setMat4("_Projection", projection);
+					//useShader->setMat4("_View", view);
 					useShader->setMat4("_Model", pointLightTransform.getModelMatrix());
 
 					useShader->setVec3("_Color", glm::vec3(1));
@@ -530,12 +575,17 @@ int main() {
 
 					if (!renderLightVolumeWireframe)
 					{
-						passLightVolumeInfo(&pointLightVolumeShader, view, projection, pointLights[i]);
+						passLightVolumeInfo(&lightVolumeShader, view, projection, pointLights[i]);
 					}
 
 					sphereMesh.draw();
-				}
 
+					glCullFace(GL_BACK);
+				}
+				
+
+				glEnable(GL_DEPTH_TEST);
+				
 				glPolygonMode(GL_FRONT_AND_BACK, wireFrame ? GL_LINE : GL_FILL);
 			}
 			else
@@ -586,8 +636,11 @@ int main() {
 			//Draw light as a small sphere using unlit shader, ironically.
 			drawLights(&unlitShader, view, projection, cubeMesh, sphereMesh, cylinderMesh, planeMesh);
 		}
-		else
+		else  //Forward Rendering
 		{
+			glDepthMask(GL_TRUE);
+			glEnable(GL_DEPTH_TEST);
+
 			glDisable(GL_BLEND);
 
 			//Shadows + Forward Rendering
@@ -1017,6 +1070,34 @@ void passLightInfo(Shader* shader, glm::mat4 view, glm::mat4 projection)
 	}
 }
 
+void passDeferredLightInfo(Shader* shader)
+{
+	shader->use();
+	shader->setVec3("_BrightColor", brightColor);	//Used in bloom
+	shader->setFloat("_BrightnessThreshold", brightnessThreshold);	//Used in bloom
+	shader->setFloat("_MinBias", minBias);
+	shader->setFloat("_MaxBias", maxBias);
+	shader->setInt("_EnablePCF", enablePCF);
+	shader->setInt("_PCFSamples", pcfSamples);
+
+	//Attenuation Uniforms
+	shader->setFloat("_Attenuation.constant", constantAttenuation);
+	shader->setFloat("_Attenuation.linear", linearAttenuation);
+	shader->setFloat("_Attenuation.quadratic", quadraticAttenuation);
+
+	shader->setInt("_Phong", phong);
+
+	//Directional Light Uniforms
+	shader->setInt("_UsedDirectionalLights", directionalLightCount);
+
+	for (int i = 0; i < directionalLightCount; i++)
+	{
+		shader->setVec3("_DirectionalLight[" + std::to_string(i) + "].dir", directionalLights[i].dir);
+		shader->setVec3("_DirectionalLight[" + std::to_string(i) + "].color", directionalLights[i].color);
+		shader->setFloat("_DirectionalLight[" + std::to_string(i) + "].intensity", directionalLights[i].intensity);
+	}
+}
+
 void passLightVolumeInfo(Shader* shader, glm::mat4 view, glm::mat4 projection, PointLight light)
 {
 	shader->use();
@@ -1035,12 +1116,7 @@ void passLightVolumeInfo(Shader* shader, glm::mat4 view, glm::mat4 projection, P
 	shader->setFloat("_Attenuation.quadratic", quadraticAttenuation);
 
 	//Material Uniforms
-	shader->setVec3("_Mat.color", defaultMat.color);
-	shader->setFloat("_Mat.ambientCoefficient", defaultMat.ambientK);
-	shader->setFloat("_Mat.diffuseCoefficient", defaultMat.diffuseK);
-	shader->setFloat("_Mat.specularCoefficient", defaultMat.specularK);
-	shader->setFloat("_Mat.shininess", defaultMat.shininess);
-	shader->setFloat("_Mat.normalIntensity", defaultMat.normalIntensity);
+	passMaterialInfo(shader);
 
 	shader->setInt("_Phong", phong);
 
@@ -1098,6 +1174,16 @@ void passLightVolumeInfo(Shader* shader, glm::mat4 view, glm::mat4 projection, P
 	//	shader->setFloat("_Spotlight[" + std::to_string(i) + "].maxAngle", glm::cos(glm::radians(spotlights[i].outerAngle)));
 	//	shader->setFloat("_Spotlight[" + std::to_string(i) + "].falloff", spotlights[i].angleFalloff);
 	//}
+}
+
+void passMaterialInfo(Shader* shader)
+{
+	shader->setVec3("_Mat.color", defaultMat.color);
+	shader->setFloat("_Mat.ambientCoefficient", defaultMat.ambientK);
+	shader->setFloat("_Mat.diffuseCoefficient", defaultMat.diffuseK);
+	shader->setFloat("_Mat.specularCoefficient", defaultMat.specularK);
+	shader->setFloat("_Mat.shininess", defaultMat.shininess);
+	shader->setFloat("_Mat.normalIntensity", defaultMat.normalIntensity);
 }
 
 void passTextureInfo(Shader* shader)

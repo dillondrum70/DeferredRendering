@@ -9,6 +9,8 @@ uniform float _BrightnessThreshold;
 
 uniform vec2 _ScreenDimensions;
 
+uniform int _LightType; //0 - ambient, 1 - point, 2 - directional, 3 - spotlight
+
 //Uniforms from application
 
 struct Attenuation
@@ -264,24 +266,33 @@ void main()
     vec3 albedo = texture(_GBuffer.albedoSpecular, texCoord).rgb;
     float specFloat = texture(_GBuffer.albedoSpecular, texCoord).a;
 
-    //Ambient Light
-    vec3 ambient = _Mat.ambientCoefficient * _Mat.color * albedo;
-
+    vec3 ambient = vec3(0);
     vec3 diffuse = vec3(0);
     vec3 specular = vec3(0);
 
-    //Point Light diffuse and specular
-    pointLight(diffuse, specular, position, normal);
-
-    //Directional light diffuse and specular
-    //directionalLight(diffuse, specular, position, normal);
-
-    //Spotlight diffuse and specular
-    //calculateSpotlight(diffuse, specular, position, normal);
-
-    float bias = max(_MaxBias * (1.0 - dot(normal, -_DirectionalLight[0].dir)), _MinBias);
-    float shadow = 0;
+    switch(_LightType)
+    {
+        case 0: //Ambient
+            ambient = _Mat.ambientCoefficient * _Mat.color * albedo;
+            break;
+        case 1: //Point
+            pointLight(diffuse, specular, position, normal);
+            diffuse *=  albedo;
+            break;
+        case 2: //Directional
+            directionalLight(diffuse, specular, position, normal);
+            diffuse *=  albedo;
+            break;
+        case 3: //Spotlight
+            //calculateSpotlight(diffuse, specular, position, normal);
+            diffuse *=  albedo;
+            break;
+    }
+    
 ////////////////// Shadows disabled
+//    float bias = max(_MaxBias * (1.0 - dot(normal, -_DirectionalLight[0].dir)), _MinBias);
+//    float shadow = 0;
+
 //    if(_EnablePCF)
 //    {
 //        shadow = calcPCF(_ShadowMap, lightSpacePos, bias, _PCFSamples);
@@ -291,9 +302,8 @@ void main()
 //        shadow = calcShadow(_ShadowMap, lightSpacePos, bias);
 //    }
 
-    diffuse *=  albedo;
-    
-    FragColor = vec4(ambient + ((diffuse + specular) * (1.0 - shadow)), 1.0f);
+    //FragColor = vec4(ambient + ((diffuse + specular) * (1.0 - shadow)), 1.0f);
+    FragColor = vec4(ambient + diffuse + specular, 1.0f);
     
 
     //FragColor = vec4(vert_out.UV.x, vert_out.UV.y, 0, 1);
