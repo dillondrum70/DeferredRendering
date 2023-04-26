@@ -115,6 +115,7 @@ bool gBufferQuadsEnabled = true;
 bool deferredRenderingEnabled = true;
 bool lightVolumesEnabled = true;
 bool renderLightVolumeWireframe = false;
+bool enableAmbient = true;
 
 bool debugQuadEnabled = false;
 
@@ -484,24 +485,24 @@ int main() {
 				glBindTexture(GL_TEXTURE_2D, positionBuffer.GetTexture());
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 				lightVolumeShader.setInt("_GBuffer.position", 0);
 
 				glActiveTexture(GL_TEXTURE1);
 				glBindTexture(GL_TEXTURE_2D, normalBuffer.GetTexture());
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 				lightVolumeShader.setInt("_GBuffer.normal", 1);
 
 				glActiveTexture(GL_TEXTURE2);
 				glBindTexture(GL_TEXTURE_2D, albedoSpecularBuffer.GetTexture());
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 				lightVolumeShader.setInt("_GBuffer.albedoSpecular", 2);
 
 				Shader* useShader = nullptr;
@@ -526,6 +527,7 @@ int main() {
 				glDisable(GL_DEPTH_TEST);
 
 				//Ambient lighting pass
+				if (enableAmbient)
 				{
 					useShader->setMat4("_Projection", glm::mat4(1));
 					useShader->setMat4("_View", glm::mat4(1));
@@ -565,10 +567,10 @@ int main() {
 					float maxIlluminance = std::max(pointLights[i].color.r, std::max(pointLights[i].color.g, pointLights[i].color.b));
 
 					//Find radius using quadratic equation
-					//float radius = (-linearAttenuation + std::sqrtf(linearAttenuation * linearAttenuation - 4 * quadraticAttenuation * (constantAttenuation - (256.0 / 5.0) * maxIlluminance)))
-						/// (2 * quadraticAttenuation);
-					float radius = (-linearAttenuation + std::sqrtf(linearAttenuation * linearAttenuation - 4 * quadraticAttenuation * (constantAttenuation - (256.0) * maxIlluminance)))
+					float radius = (-linearAttenuation + std::sqrtf(linearAttenuation * linearAttenuation - 4 * quadraticAttenuation * (constantAttenuation - (256.0 / 5.0) * maxIlluminance)))
 						/ (2 * quadraticAttenuation);
+					//float radius = (-linearAttenuation + std::sqrtf(linearAttenuation * linearAttenuation - 4 * quadraticAttenuation * (constantAttenuation - (256.0) * maxIlluminance)))
+						/// (2 * quadraticAttenuation);
 
 					//Create transform for the light to scale it by radius and move it to it's position
 					ew::Transform pointLightTransform;
@@ -905,6 +907,7 @@ int main() {
 		ImGui::Checkbox("Enable Deferred Rendering", &deferredRenderingEnabled);
 		ImGui::Checkbox("Enable Light Volumes", &lightVolumesEnabled);
 		ImGui::Checkbox("Render Light Volume Wireframes", &renderLightVolumeWireframe);
+		ImGui::Checkbox("Enable Ambient Lighting", &enableAmbient);
 
 		ImGui::End();
 
