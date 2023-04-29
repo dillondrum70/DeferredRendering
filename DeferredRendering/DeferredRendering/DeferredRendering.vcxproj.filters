@@ -216,5 +216,7 @@
     <None Include="shaders\deferredLit.vert" />
     <None Include="shaders\lightVolume.frag" />
     <None Include="shaders\lightVolume.vert" />
+    <None Include="shaders\ssao.frag" />
+    <None Include="shaders\ssao.vert" />
   </ItemGroup>
 </Project>

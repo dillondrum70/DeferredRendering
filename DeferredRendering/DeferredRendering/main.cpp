@@ -8,6 +8,7 @@
 #include <glm/gtx/quaternion.hpp>
 
 #include <stdio.h>
+#include <random>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -39,6 +40,8 @@ void passMaterialInfo(Shader* shader);
 void passPointLightVolumeInfo(Shader* shader, glm::mat4 view, glm::mat4 projection, PointLight light);
 void passSpotLightVolumeInfo(Shader* shader, glm::mat4 view, glm::mat4 projection, SpotLight light);
 void passTextureInfo(Shader* shader);
+
+float lerp(float a, float b, float f);
 
 void drawScene(Shader* shader, glm::mat4 view, glm::mat4 projection, 
 	ew::Mesh& cubeMesh, ew::Mesh& sphereMesh, ew::Mesh& cylinderMesh, ew::Mesh& planeMesh);
@@ -91,7 +94,7 @@ float pointLightHeight = 2.f;
 
 const int MAX_DIRECTIONAL_LIGHTS = 8;
 DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
-int directionalLightCount = 0;
+int directionalLightCount = 1;
 float directionalLightAngle = 180.f;	//Angle towards center, 0 is down, + is towards the center, - is away from the center
 
 const int MAX_SPOTLIGHTS = 8;
@@ -115,6 +118,8 @@ bool gBufferQuadsEnabled = true;
 bool deferredRenderingEnabled = true;
 bool lightVolumesEnabled = true;
 bool renderLightVolumeWireframe = false;
+
+bool ssaoEnabled = true;
 
 bool debugQuadEnabled = false;
 
@@ -211,6 +216,8 @@ int main() {
 	Shader deferredLitShader("shaders/blit.vert", "shaders/deferredLit.frag");
 	Shader lightVolumeShader("shaders/lightVolume.vert", "shaders/lightVolume.frag");
 
+	Shader ssaoShader("shaders/ssao.vert", "shaders/ssao.frag");
+
 	ew::MeshData cubeMeshData;
 	ew::createCube(1.0f, 1.0f, 1.0f, cubeMeshData);
 	ew::MeshData sphereMeshData;
@@ -258,14 +265,33 @@ int main() {
 	//Initialize shape transforms
 	cubeTransform.position = glm::vec3(-2.0f, -.5f, 0.0f);
 
-	for (ew::Transform& sphereTrans : sphereTransforms)
+	/*for (ew::Transform& sphereTrans : sphereTransforms)
 	{
 		sphereTrans.position = glm::vec3(
 			((static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) * 10) - 5,
 			((static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) * 5),
 			((static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) * 10) - 5);
 		sphereTrans.scale = glm::vec3(((static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) * .6f) + .4f);
-	}
+	}*/
+
+	sphereTransforms[0].position = glm::vec3(0, 2.5, 0);
+
+	float oneRootTwo = 1 / std::sqrt(2);
+
+	sphereTransforms[1].position = glm::vec3(.5, 2.5 - oneRootTwo, .5);
+	sphereTransforms[2].position = glm::vec3(-.5, 2.5 - oneRootTwo, .5);
+	sphereTransforms[3].position = glm::vec3(.5, 2.5 - oneRootTwo, -.5);
+	sphereTransforms[4].position = glm::vec3(-.5, 2.5 - oneRootTwo, -.5);
+
+	sphereTransforms[5].position = glm::vec3(0, 2.5 - 2 * oneRootTwo, 0);
+	sphereTransforms[6].position = glm::vec3(-1, 2.5 - 2 * oneRootTwo, 0);
+	sphereTransforms[7].position = glm::vec3(0, 2.5 - 2 * oneRootTwo, -1);
+	sphereTransforms[8].position = glm::vec3(1, 2.5 - 2 * oneRootTwo, 0);
+	sphereTransforms[9].position = glm::vec3(0, 2.5 - 2 * oneRootTwo, 1);
+	sphereTransforms[10].position = glm::vec3(-1, 2.5 - 2 * oneRootTwo, 1);
+	sphereTransforms[11].position = glm::vec3(1, 2.5 - 2 * oneRootTwo, -1);
+	sphereTransforms[12].position = glm::vec3(-1, 2.5 - 2 * oneRootTwo, -1);
+	sphereTransforms[13].position = glm::vec3(1, 2.5 - 2 * oneRootTwo, 1);
 	
 
 	planeTransform.position = glm::vec3(0.0f, -1.0f, 0.0f);
@@ -386,6 +412,44 @@ int main() {
 	gBuffer.AddColorAttachment(normalBuffer, GL_COLOR_ATTACHMENT1);
 	gBuffer.AddColorAttachment(albedoSpecularBuffer, GL_COLOR_ATTACHMENT2);
 	gBuffer.AddDepthAttachment(gDepthBuffer);
+
+	Texture ssaoBuffer;
+	ssaoBuffer.CreateTexture(GL_RED, SCREEN_WIDTH, SCREEN_HEIGHT, GL_RED, GL_FLOAT);
+	glBindTexture(GL_TEXTURE_2D, ssaoBuffer.GetTexture());
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+	FramebufferObject ssaoFbo;
+	ssaoFbo.Create();
+	ssaoFbo.AddColorAttachment(ssaoBuffer, GL_COLOR_ATTACHMENT0);
+
+
+
+	std::uniform_real_distribution<float> randomFloats(0.0, 1.0);
+	std::default_random_engine generator;
+
+	std::vector<glm::vec3> ssaoKernel;
+	for (unsigned int i = 0; i < 64; i++)
+	{
+		glm::vec3 sample(randomFloats(generator) * 2.0 - 1.0, randomFloats(generator) * 2.0 - 1.0, randomFloats(generator));
+		float scale = (float)i / 64.0;
+		sample = lerp(0.1f, 1.0f, scale * scale) * glm::normalize(sample) * randomFloats(generator);
+		ssaoKernel.push_back(sample);
+	}
+
+	std::vector<glm::vec3> ssaoNoise;
+	for (unsigned int i = 0; i < 16; i++)
+	{
+		glm::vec3 noise(randomFloats(generator) * 2.0 - 1.0, randomFloats(generator) * 2.0 - 1.0, randomFloats(generator));
+		ssaoNoise.push_back(noise);
+	}
+
+	Texture noiseTex;
+	noiseTex.CreateTexture(GL_RGBA16F, 4, 4, GL_RGB, GL_FLOAT, &ssaoNoise);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 	
 	while (!glfwWindowShouldClose(window)) {
 		processInput(window);
@@ -394,6 +458,12 @@ int main() {
 		if (!gBuffer.IsComplete())
 		{
 			printf("GBuffer Framebuffer Object is incomplete\n\0");
+		}
+
+		//Check framebuffer object is complete
+		if (!ssaoFbo.IsComplete())
+		{
+			printf("SSAO Framebuffer Object is incomplete\n\0");
 		}
 
 		//Check framebuffer object is complete
@@ -474,9 +544,6 @@ int main() {
 			fbo.Clear(bgColor);
 			GLenum buffers[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
 			glDrawBuffers(2, buffers);
-
-			//TODO - Convert deferredLit.frag to take one light at a time
-			
 
 			if (lightVolumesEnabled)
 			{
@@ -755,6 +822,58 @@ int main() {
 		glEnable(GL_CULL_FACE);
 		glPolygonMode(GL_FRONT_AND_BACK, wireFrame ? GL_LINE : GL_FILL);
 
+		if (ssaoEnabled && deferredRenderingEnabled)
+		{
+			glEnable(GL_BLEND);
+			glBlendEquation(GL_FUNC_COMPLEX_MULTIPLY_EXT);	//Additive blending
+			glBlendFunc(GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA);
+
+			ssaoFbo.Bind();
+			ssaoFbo.Clear(bgColor);
+			GLenum ssaoAttachments[] = { GL_COLOR_ATTACHMENT0 };
+			glDrawBuffers(1, ssaoAttachments);
+
+			ssaoShader.use();
+			ssaoShader.setVec2("_ScreenDimensions", glm::vec2(SCREEN_WIDTH, SCREEN_HEIGHT));
+			ssaoShader.setMat4("_Projection", projection);
+			ssaoShader.setMat4("_View", view);
+
+			glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, positionBuffer.GetTexture());
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+			ssaoShader.setInt("_GBuffer.position", 0);
+
+			glActiveTexture(GL_TEXTURE1);
+			glBindTexture(GL_TEXTURE_2D, normalBuffer.GetTexture());
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+			ssaoShader.setInt("_GBuffer.normal", 1);
+
+			glActiveTexture(GL_TEXTURE2);
+			glBindTexture(GL_TEXTURE_2D, noiseTex.GetTexture());
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+			ssaoShader.setInt("_TexNoise", 2);
+
+			for (unsigned int i = 0; i < 64; i++)
+			{
+				ssaoShader.setVec3("_Samples[" + std::to_string(i) + "]", ssaoKernel[i]);
+			}
+
+			ssaoShader.setMat4("_Model", ew::translate(quadTransform.position)* ew::scale(quadTransform.scale));
+
+			quadMesh.draw();
+
+			glDisable(GL_BLEND);
+		}
+
 		//Post Processing
 		//After drawing, bind to default framebuffer, clear it, and draw the fullscreen quad with the shader
 		fbo.Unbind(glm::vec2(SCREEN_WIDTH, SCREEN_HEIGHT));
@@ -905,6 +1024,8 @@ int main() {
 		ImGui::Checkbox("Enable Deferred Rendering", &deferredRenderingEnabled);
 		ImGui::Checkbox("Enable Light Volumes", &lightVolumesEnabled);
 		ImGui::Checkbox("Render Light Volume Wireframes", &renderLightVolumeWireframe);
+		ImGui::Spacing();
+		ImGui::Checkbox("Enable SSAO", &ssaoEnabled);
 
 		ImGui::End();
 
@@ -1056,6 +1177,11 @@ int main() {
 
 	glfwTerminate();
 	return 0;
+}
+
+float lerp(float a, float b, float f)
+{
+	return a + f * (b - a);
 }
 
 void passLightInfo(Shader* shader, glm::mat4 view, glm::mat4 projection)

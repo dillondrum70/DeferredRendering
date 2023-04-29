@@ -64,7 +64,7 @@ public:
 	void SetSpecularMap(Texture* tex) { specMap = tex; }
 
 	GLuint CreateTexture(const char* texFilePath);
-	GLuint CreateTexture(GLenum internalFormat, unsigned int width, unsigned int height, GLenum format, GLenum type);
+	GLuint CreateTexture(GLenum internalFormat, unsigned int width, unsigned int height, GLenum format, GLenum type, void* data = NULL);
 
 	void Destroy();
 
